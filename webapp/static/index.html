@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Whisper Live — Iris Xe</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171e2e; --edge: #2a3550; --text: #e8ecf5;
+    --dim: #8b96ad; --accent: #4da3ff; --ok: #3ecf8e; --warn: #f0b350;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; padding: 24px 16px;
+  }
+  .wrap { width: 100%; max-width: 780px; }
+  h1 { font-size: 20px; font-weight: 600; }
+  h1 small { color: var(--dim); font-weight: 400; font-size: 13px; margin-left: 8px; }
+  .bar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 12px;
+    padding: 12px 14px; margin: 16px 0;
+  }
+  button, select {
+    background: #1f2a42; color: var(--text); border: 1px solid var(--edge);
+    border-radius: 8px; padding: 8px 14px; font-size: 14px; cursor: pointer;
+  }
+  input[type="text"] {
+    flex: 1; min-width: 200px; background: #101625; color: var(--text);
+    border: 1px solid var(--edge); border-radius: 8px; padding: 8px 12px; font-size: 13px;
+  }
+  input[type="text"]:focus { outline: none; border-color: var(--accent); }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #08101f; font-weight: 600; }
+  button.live { background: #d64545; border-color: #d64545; color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  #meter { width: 90px; height: 8px; background: #101625; border-radius: 4px; overflow: hidden; }
+  #meterFill { height: 100%; width: 0%; background: var(--ok); transition: width 80ms linear; }
+  #status { color: var(--dim); font-size: 13px; margin-left: auto; }
+  #status b { color: var(--ok); font-weight: 600; }
+  #feed {
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 12px;
+    padding: 8px 0; min-height: 320px; max-height: 60vh; overflow-y: auto;
+  }
+  .seg { display: flex; gap: 12px; padding: 9px 16px; border-bottom: 1px solid #1d2740; }
+  .seg:last-child { border-bottom: 0; }
+  .seg .meta { flex: 0 0 96px; color: var(--dim); font-size: 12px; padding-top: 3px; }
+  .seg .meta .rtf { color: var(--warn); }
+  .seg .txt { flex: 1; font-size: 17px; }
+  .seg .txt[dir="rtl"] {
+    font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Urdu Typesetting",
+                 "Segoe UI", sans-serif;
+    font-size: 20px; line-height: 2;
+  }
+  .empty { color: var(--dim); text-align: center; padding: 60px 20px; }
+  .note { color: var(--dim); font-size: 12.5px; margin-top: 10px; }
+  #partial {
+    display: none; padding: 10px 16px; color: var(--dim); font-style: italic;
+    font-size: 17px; background: var(--panel); border: 1px dashed var(--edge);
+    border-radius: 12px; margin-top: 8px;
+  }
+  #partial.on { display: block; }
+  #partial::before { content: "● live  "; color: var(--warn); font-size: 11px; font-style: normal; }
+  #partial[dir="rtl"] {
+    font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Urdu Typesetting",
+                 "Segoe UI", sans-serif;
+    font-size: 20px; line-height: 2;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Whisper Live <small>large-v3-int8 · OpenVINO · Intel Iris Xe iGPU</small></h1>
+
+  <div class="bar">
+    <select id="langSel" title="Transcription language">
+      <option value="ur" selected>اردو — Urdu</option>
+      <option value="en">English</option>
+      <option value="auto">Auto-detect</option>
+    </select>
+    <button id="micBtn" class="primary">🎙 Start microphone</button>
+    <button id="demoUrBtn">▶ Urdu clip</button>
+    <button id="demoEnBtn">▶ English clip</button>
+    <button id="clearBtn">Clear</button>
+    <div id="meter"><div id="meterFill"></div></div>
+    <span id="status">connecting…</span>
+  </div>
+
+  <div class="bar">
+    <input id="streamUrl" type="text" spellcheck="false"
+           placeholder="Live stream / video URL (YouTube live, VOD, radio…) — transcribed server-side">
+    <button id="streamBtn">📡 Start stream</button>
+  </div>
+
+  <div id="feed"><div class="empty">Start the microphone and speak — Urdu or English —<br>
+    or play a demo clip. Segments appear as they are transcribed on the iGPU.</div></div>
+  <div id="partial"></div>
+  <p class="note">Segments are cut on ~0.7 s pauses (max 8 s), so expect text a moment
+    after you stop speaking. Switch language any time; “Auto-detect” decides per segment.</p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let ws, ctx, capNode, micStream, micSrc, demoSrc, playingDemo = false, streaming = false;
+
+function setStatus(html) { $("status").innerHTML = html; }
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { setStatus("<b>ready</b> — model on iGPU"); sendConfig(); };
+  ws.onclose = () => { setStatus("disconnected — reload page"); };
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "partial") {
+      const p = $("partial");
+      if (!m.text) { p.classList.remove("on"); p.textContent = ""; return; }
+      p.setAttribute("dir", /[؀-ۿ]/.test(m.text) ? "rtl" : "ltr");
+      p.textContent = m.text;
+      p.classList.add("on");
+      return;
+    }
+    if (m.type === "stream_status") {
+      streaming = m.state === "started";
+      $("streamBtn").textContent = streaming ? "⏹ Stop stream" : "📡 Start stream";
+      $("streamBtn").classList.toggle("live", streaming);
+      setStatus(m.state === "started" ? "<b>streaming</b> — pulling audio server-side"
+        : m.state === "error" ? "stream error: " + (m.detail || "unknown")
+        : "<b>ready</b>");
+      return;
+    }
+    if (m.type !== "segment") return;
+    $("partial").classList.remove("on"); $("partial").textContent = "";
+    const empty = document.querySelector(".empty");
+    if (empty) empty.remove();
+    const rtl = /[؀-ۿ]/.test(m.text);
+    const div = document.createElement("div");
+    div.className = "seg";
+    div.innerHTML =
+      `<div class="meta">${m.t0.toFixed(0)}–${m.t1.toFixed(0)}s · ${m.lang}<br>` +
+      `<span class="rtf">${m.infer_s}s · ${m.rtf}× RT</span></div>` +
+      `<div class="txt" dir="${rtl ? "rtl" : "ltr"}"></div>`;
+    div.querySelector(".txt").textContent = m.text;
+    $("feed").appendChild(div);
+    $("feed").scrollTop = $("feed").scrollHeight;
+  };
+}
+
+function sendConfig() {
+  if (ws?.readyState === 1)
+    ws.send(JSON.stringify({ type: "config", language: $("langSel").value }));
+}
+
+async function ensureAudio() {
+  if (ctx) return;
+  ctx = new AudioContext({ sampleRate: 16000 });
+  const workletCode = `
+    class Cap extends AudioWorkletProcessor {
+      constructor() { super(); this.parts = []; this.n = 0; }
+      process(inputs) {
+        const ch = inputs[0][0];
+        if (ch) {
+          this.parts.push(new Float32Array(ch)); this.n += ch.length;
+          if (this.n >= 2048) {
+            const out = new Float32Array(this.n); let o = 0;
+            for (const p of this.parts) { out.set(p, o); o += p.length; }
+            this.port.postMessage(out.buffer, [out.buffer]);
+            this.parts = []; this.n = 0;
+          }
+        }
+        return true;
+      }
+    }
+    registerProcessor("cap", Cap);`;
+  const url = URL.createObjectURL(new Blob([workletCode], { type: "application/javascript" }));
+  await ctx.audioWorklet.addModule(url);
+  capNode = new AudioWorkletNode(ctx, "cap");
+  capNode.port.onmessage = e => {
+    if (ws?.readyState === 1) ws.send(e.data);
+    const a = new Float32Array(e.data);
+    let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * a[i];
+    const lvl = Math.min(100, Math.sqrt(s / a.length) * 700);
+    $("meterFill").style.width = lvl + "%";
+  };
+  capNode.connect(ctx.destination); // worklet outputs silence; keeps the graph pulled
+}
+
+async function startMic() {
+  await ensureAudio(); await ctx.resume();
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
+  });
+  micSrc = ctx.createMediaStreamSource(micStream);
+  micSrc.connect(capNode);
+  $("micBtn").textContent = "⏹ Stop microphone";
+  $("micBtn").classList.replace("primary", "live");
+  setStatus("<b>listening</b> — speak now");
+}
+
+function stopMic() {
+  micSrc?.disconnect(); micStream?.getTracks().forEach(t => t.stop());
+  micSrc = micStream = null;
+  ws?.readyState === 1 && ws.send(JSON.stringify({ type: "flush" }));
+  $("micBtn").textContent = "🎙 Start microphone";
+  $("micBtn").classList.replace("live", "primary");
+  setStatus("<b>ready</b>"); $("meterFill").style.width = "0%";
+}
+
+async function playDemo(lang) {
+  if (playingDemo) return;
+  await ensureAudio(); await ctx.resume();
+  $("langSel").value = lang; sendConfig();
+  const resp = await fetch(`/demo-audio/${lang}`);
+  const buf = await ctx.decodeAudioData(await resp.arrayBuffer());
+  demoSrc = ctx.createBufferSource();
+  demoSrc.buffer = buf;
+  demoSrc.connect(capNode);       // same path as the microphone
+  demoSrc.connect(ctx.destination); // audible
+  playingDemo = true;
+  const btn = lang === "ur" ? $("demoUrBtn") : $("demoEnBtn");
+  btn.disabled = true;
+  setStatus(`<b>playing ${lang} clip</b> — transcribing live`);
+  demoSrc.onended = () => {
+    playingDemo = false; btn.disabled = false;
+    ws?.readyState === 1 && ws.send(JSON.stringify({ type: "flush" }));
+    setStatus("<b>ready</b>"); $("meterFill").style.width = "0%";
+  };
+  demoSrc.start();
+}
+
+$("micBtn").onclick = () => micStream ? stopMic() : startMic().catch(e => {
+  const hint = e.name === "NotAllowedError"
+    ? "microphone blocked — click the 🔒/🎙 icon in the address bar and allow the mic"
+    : e.name === "NotFoundError" ? "no microphone found on this device"
+    : "mic error: " + e.message;
+  setStatus(hint);
+});
+$("streamBtn").onclick = () => {
+  if (ws?.readyState !== 1) return;
+  if (streaming) { ws.send(JSON.stringify({ type: "stream_stop" })); return; }
+  const url = $("streamUrl").value.trim();
+  if (!url) { setStatus("paste a stream URL first"); return; }
+  if (micStream) stopMic();
+  ws.send(JSON.stringify({ type: "stream_start", url }));
+  setStatus("starting stream — first audio can take ~10–20 s…");
+};
+$("demoUrBtn").onclick = () => playDemo("ur");
+$("demoEnBtn").onclick = () => playDemo("en");
+$("clearBtn").onclick = () => { $("feed").innerHTML = '<div class="empty">Cleared.</div>'; };
+$("langSel").onchange = sendConfig;
+connect();
+</script>
+</body>
+</html>
