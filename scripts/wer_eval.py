@@ -4,6 +4,7 @@ Arabic-drift codepoints into Urdu forms, then scores with jiwer.
 Usage: python scripts/wer_eval.py refs/clip.txt transcripts/clip.openvino.txt
 """
 import argparse
+import sys
 from pathlib import Path
 
 import jiwer
@@ -12,6 +13,8 @@ from urdu_norm import normalize
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
     ap.add_argument("reference", help="hand-corrected reference transcript")
     ap.add_argument("hypothesis", help="model output transcript")

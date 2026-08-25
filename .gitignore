@@ -6,3 +6,5 @@ transcripts/
 __pycache__/
 *.pyc
 *.log
+*.errors.txt
+.claude/
