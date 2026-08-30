@@ -1,0 +1,8 @@
+# Minimal deps for `pytest tests/` + lint — covers the pure-logic modules only
+# (urdu_norm, script_audit, wer_eval, backends, url_safety, webvtt). Does NOT
+# include openvino/faster-whisper/ctranslate2/fastapi: those are hardware/
+# integration-only and not exercised by this suite. See requirements.txt for
+# the full runtime environment.
+jiwer==4.0.0
+pytest==9.1.1
+pyflakes==3.4.0

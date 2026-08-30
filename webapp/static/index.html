@@ -3,11 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Whisper Live — Iris Xe</title>
+<title>Whisper Live — Multi-Channel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400..700&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #0f1420; --panel: #171e2e; --edge: #2a3550; --text: #e8ecf5;
-    --dim: #8b96ad; --accent: #4da3ff; --ok: #3ecf8e; --warn: #f0b350;
+    --dim: #8b96ad; --accent: #4da3ff; --ok: #3ecf8e; --warn: #f0b350; --err: #ff6b6b;
+    --nastaliq: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Urdu Typesetting", "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; margin: 0; }
   body {
@@ -15,7 +19,7 @@
     font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
     display: flex; flex-direction: column; align-items: center; padding: 24px 16px;
   }
-  .wrap { width: 100%; max-width: 780px; }
+  .wrap { width: 100%; max-width: 1200px; }
   h1 { font-size: 20px; font-weight: 600; }
   h1 small { color: var(--dim); font-weight: 400; font-size: 13px; margin-left: 8px; }
   .bar {
@@ -23,12 +27,13 @@
     background: var(--panel); border: 1px solid var(--edge); border-radius: 12px;
     padding: 12px 14px; margin: 16px 0;
   }
-  button, select {
+  button, select, input {
     background: #1f2a42; color: var(--text); border: 1px solid var(--edge);
     border-radius: 8px; padding: 8px 14px; font-size: 14px; cursor: pointer;
+    font-family: inherit;
   }
   input[type="text"] {
-    flex: 1; min-width: 200px; background: #101625; color: var(--text);
+    flex: 1; min-width: 160px; background: #101625; cursor: text;
     border: 1px solid var(--edge); border-radius: 8px; padding: 8px 12px; font-size: 13px;
   }
   input[type="text"]:focus { outline: none; border-color: var(--accent); }
@@ -36,121 +41,417 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #08101f; font-weight: 600; }
   button.live { background: #d64545; border-color: #d64545; color: #fff; }
   button:disabled { opacity: .45; cursor: default; }
-  #meter { width: 90px; height: 8px; background: #101625; border-radius: 4px; overflow: hidden; }
+  #meter { width: 70px; height: 8px; background: #101625; border-radius: 4px; overflow: hidden; flex: 0 0 auto; }
   #meterFill { height: 100%; width: 0%; background: var(--ok); transition: width 80ms linear; }
-  #status { color: var(--dim); font-size: 13px; margin-left: auto; }
-  #status b { color: var(--ok); font-weight: 600; }
-  #feed {
+  #globalStatus { color: var(--dim); font-size: 13px; margin-left: auto; text-align: right; }
+  #globalStatus b { color: var(--ok); font-weight: 600; }
+  #globalStatus.err b { color: var(--err); }
+  .bar.quickadd { padding: 10px 14px; }
+  .quickadd-label { color: var(--dim); font-size: 12.5px; flex: 0 0 auto; }
+  #quickAddRow { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; }
+  .quickBtn { font-size: 13px; padding: 6px 12px; }
+  .quickBtn:disabled { opacity: .5; }
+
+  .channels {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px; margin-top: 4px;
+  }
+  .empty-state { color: var(--dim); text-align: center; padding: 60px 20px; grid-column: 1 / -1; }
+  .card {
     background: var(--panel); border: 1px solid var(--edge); border-radius: 12px;
-    padding: 8px 0; min-height: 320px; max-height: 60vh; overflow-y: auto;
+    padding: 12px; display: flex; flex-direction: column; min-height: 260px;
   }
-  .seg { display: flex; gap: 12px; padding: 9px 16px; border-bottom: 1px solid #1d2740; }
-  .seg:last-child { border-bottom: 0; }
-  .seg .meta { flex: 0 0 96px; color: var(--dim); font-size: 12px; padding-top: 3px; }
-  .seg .meta .rtf { color: var(--warn); }
-  .seg .txt { flex: 1; font-size: 17px; }
-  .seg .txt[dir="rtl"] {
-    font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Urdu Typesetting",
-                 "Segoe UI", sans-serif;
-    font-size: 20px; line-height: 2;
+  .card .head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .card .head .name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .head select { font-size: 12px; padding: 4px 6px; }
+  .card .head button { font-size: 12px; padding: 4px 8px; }
+  .pill { font-size: 11px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; border: 1px solid; }
+  .pill.live { color: var(--ok); border-color: var(--ok); }
+  .pill.starting { color: var(--warn); border-color: var(--warn); }
+  .pill.error { color: var(--err); border-color: var(--err); }
+  .pill.stopped { color: var(--dim); border-color: var(--edge); }
+  .card .src { font-size: 16px; }
+  .videoWrap {
+    position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000;
+    border-radius: 8px; overflow: hidden; margin-bottom: 8px; flex: 0 0 auto;
   }
-  .empty { color: var(--dim); text-align: center; padding: 60px 20px; }
-  .note { color: var(--dim); font-size: 12.5px; margin-top: 10px; }
-  #partial {
-    display: none; padding: 10px 16px; color: var(--dim); font-style: italic;
-    font-size: 17px; background: var(--panel); border: 1px dashed var(--edge);
-    border-radius: 12px; margin-top: 8px;
+  .videoWrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .listenBtn { width: 100%; margin-bottom: 8px; font-size: 13px; }
+  .listenBtn.on { background: var(--ok); border-color: var(--ok); color: #08101f; font-weight: 600; }
+  .card .feed { flex: 1; overflow-y: auto; max-height: 300px; padding-right: 2px; }
+  .card .seg { padding: 6px 0; border-bottom: 1px solid #1d2740; font-size: 14px; }
+  .card .seg:last-child { border-bottom: 0; }
+  .card .seg .meta { color: var(--dim); font-size: 11px; }
+  .card .seg .txt[dir="rtl"] {
+    font-family: var(--nastaliq);
+    font-size: 19px; line-height: 2.1; font-weight: 500;
   }
-  #partial.on { display: block; }
-  #partial::before { content: "● live  "; color: var(--warn); font-size: 11px; font-style: normal; }
-  #partial[dir="rtl"] {
-    font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Urdu Typesetting",
-                 "Segoe UI", sans-serif;
-    font-size: 20px; line-height: 2;
+  .card .partial {
+    min-height: 1.6em; color: var(--dim); font-style: italic; font-size: 14px;
+    border-top: 1px dashed var(--edge); padding-top: 6px; margin-top: 6px;
   }
+  .card .partial[dir="rtl"] {
+    font-family: var(--nastaliq);
+    font-size: 18px; line-height: 2;
+  }
+  .card .partial.on::before { content: "● live  "; color: var(--warn); font-size: 10px; font-style: normal; }
+  .card .note { color: var(--dim); font-size: 11.5px; margin-top: 4px; }
+  .note-global { color: var(--dim); font-size: 12.5px; margin-top: 12px; }
+  .capacity-warning {
+    background: #332411; border: 1px solid var(--warn); color: var(--warn);
+    border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 12px;
+  }
+  .rtf-slow { color: var(--warn); font-weight: 600; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Whisper Live <small>large-v3-int8 · OpenVINO · Intel Iris Xe iGPU</small></h1>
+  <h1>Whisper Live <small id="subtitle">connecting…</small></h1>
 
   <div class="bar">
-    <select id="langSel" title="Transcription language">
-      <option value="ur" selected>اردو — Urdu</option>
-      <option value="en">English</option>
-      <option value="auto">Auto-detect</option>
+    <input id="chName" type="text" placeholder="Channel name (e.g. ARY News)" style="flex: 0 1 220px">
+    <input id="chUrl" type="text" placeholder="YouTube / live stream URL">
+    <select id="chLang" title="Transcription language">
+      <option value="auto" selected>Auto (Urdu + English)</option>
+      <option value="ur">اردو — Urdu only</option>
+      <option value="en">English only</option>
     </select>
-    <button id="micBtn" class="primary">🎙 Start microphone</button>
-    <button id="demoUrBtn">▶ Urdu clip</button>
-    <button id="demoEnBtn">▶ English clip</button>
-    <button id="clearBtn">Clear</button>
-    <div id="meter"><div id="meterFill"></div></div>
-    <span id="status">connecting…</span>
+    <button id="addChannelBtn" class="primary">➕ Add channel</button>
+  </div>
+
+  <div class="bar quickadd">
+    <span class="quickadd-label">Quick add (major Pakistani news channels):</span>
+    <div id="quickAddRow"></div>
   </div>
 
   <div class="bar">
-    <input id="streamUrl" type="text" spellcheck="false"
-           placeholder="Live stream / video URL (YouTube live, VOD, radio…) — transcribed server-side">
-    <button id="streamBtn">📡 Start stream</button>
+    <input id="micName" type="text" placeholder="Mic label (e.g. Studio desk)" style="flex: 0 1 220px">
+    <select id="micLang" title="Transcription language">
+      <option value="auto" selected>Auto (Urdu + English)</option>
+      <option value="ur">اردو — Urdu only</option>
+      <option value="en">English only</option>
+    </select>
+    <button id="micBtn">🎙 Start microphone</button>
+    <div id="meter"><div id="meterFill"></div></div>
+    <span id="globalStatus">connecting…</span>
   </div>
 
-  <div id="feed"><div class="empty">Start the microphone and speak — Urdu or English —<br>
-    or play a demo clip. Segments appear as they are transcribed on the iGPU.</div></div>
-  <div id="partial"></div>
-  <p class="note">Segments are cut on ~0.7 s pauses (max 8 s), so expect text a moment
-    after you stop speaking. Switch language any time; “Auto-detect” decides per segment.</p>
+  <div id="capacityWarning" class="capacity-warning" style="display:none"></div>
+
+  <div id="channels" class="channels">
+    <div class="empty-state">No channels yet — add a YouTube/live URL above, or start your microphone.<br>
+      Each channel is transcribed independently and its captions appear below its card.</div>
+  </div>
+
+  <p class="note-global">Segments are cut on ~0.7 s pauses (max 8 s), so expect text a moment after
+    speech pauses. "Auto" detects Urdu/English per segment — the right default for mixed-language
+    broadcast speech. Every finalized segment is saved to the database for future fine-tuning.
+    Each YouTube channel's video plays muted in its card — click <b>Listen</b> to hear one; switching
+    to another channel automatically mutes the previous one.</p>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
-let ws, ctx, capNode, micStream, micSrc, demoSrc, playingDemo = false, streaming = false;
+let ws, ctx, capNode, micStream, micSrc, myMicChannelId = null;
+const channels = new Map(); // channel_id -> { el, feedEl, partialEl, statusEl, langSel, source_type, ytPlayer, videoId, listenBtn, videoWrapEl, url }
+const RTL = /[؀-ۿ]/;
 
-function setStatus(html) { $("status").innerHTML = html; }
+// Handles verified via live YouTube search, not guessed — a guessed handle
+// (@arynewsofficial) 404'd during testing; the real one is @ArynewsTvofficial.
+// Default language is "ur" (not "auto"): testing found Whisper's auto-detect
+// occasionally misidentifies Urdu speech as Hindi (Devanagari script) on
+// short segments, which would silently contaminate the corpus for these
+// Urdu-primary channels — see PRODUCTION_READINESS.md.
+const FAMOUS_PK_CHANNELS = [
+  { name: "Geo News", url: "https://www.youtube.com/@geonews/live" },
+  { name: "ARY News", url: "https://www.youtube.com/@ArynewsTvofficial/live" },
+  { name: "Dunya News", url: "https://www.youtube.com/@DunyanewsOfficial/live" },
+  { name: "Samaa TV", url: "https://www.youtube.com/@Samaatv/live" },
+  { name: "Express News", url: "https://www.youtube.com/@ExpressNewspkofficial/live" },
+  { name: "92 News HD", url: "https://www.youtube.com/@92newshdTv/live" },
+  { name: "BOL News", url: "https://www.youtube.com/@BOLNewsofficial/live" },
+  { name: "Aaj News", url: "https://www.youtube.com/@aajtvofficial/live" },
+];
+const quickAddButtons = new Map(); // url -> button element
 
-function connect() {
+function renderQuickAddRow() {
+  const row = $("quickAddRow");
+  FAMOUS_PK_CHANNELS.forEach(ch => {
+    const btn = document.createElement("button");
+    btn.className = "quickBtn";
+    btn.textContent = ch.name;
+    btn.onclick = () => {
+      if (ws?.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: "channel_start", source: "youtube", name: ch.name, url: ch.url, language: "ur" }));
+    };
+    row.appendChild(btn);
+    quickAddButtons.set(ch.url, btn);
+  });
+}
+renderQuickAddRow();
+
+// --- YouTube video/audio preview: one channel's audio audible at a time ---
+// Video plays muted for every added channel (so you can see all of them);
+// clicking "Listen" on a card unmutes it and mutes whichever was previously
+// active — a channel-surfing model, not simultaneous audio from many tabs.
+let activeAudioChannelId = null;
+let ytApiReady = false;
+let ytApiWaiters = [];
+function loadYouTubeApi() {
+  if (window.YT && window.YT.Player) { ytApiReady = true; return; }
+  if (document.getElementById("ytApiScript")) return;
+  const tag = document.createElement("script");
+  tag.id = "ytApiScript";
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.head.appendChild(tag);
+  window.onYouTubeIframeAPIReady = () => {
+    ytApiReady = true;
+    ytApiWaiters.forEach(cb => cb());
+    ytApiWaiters = [];
+  };
+}
+function onYtReady(cb) { ytApiReady ? cb() : ytApiWaiters.push(cb); }
+
+function createPlayerForChannel(channelId, videoId) {
+  const c = channels.get(channelId);
+  if (!c || c.ytPlayer || !videoId || !c.videoWrapEl) return;
+  c.videoId = videoId;
+  loadYouTubeApi();
+  onYtReady(() => {
+    if (!channels.has(channelId)) return; // channel was removed while API was loading
+    // playerVars.mute=1 guarantees a muted start (required for autoplay anyway);
+    // no onReady mute() here — it would race a fast "Listen" click and could
+    // clobber an unMute() the user already triggered before the player finished loading.
+    c.ytPlayer = new YT.Player(c.videoWrapEl, {
+      videoId,
+      playerVars: { autoplay: 1, mute: 1, playsinline: 1, modestbranding: 1 },
+      events: {
+        // Some channels disable embedding entirely (owner setting, e.g. codes
+        // 101/150) — audio transcription is unaffected (it's pulled server-side,
+        // not through this player), but the video/Listen preview can't work for
+        // that channel. Reflect that instead of leaving YouTube's bare error box.
+        onError: () => {
+          c.embedBlocked = true;
+          if (c.listenBtn) {
+            c.listenBtn.disabled = true;
+            c.listenBtn.textContent = "🚫 Preview blocked by channel — captions still work";
+          }
+        },
+      },
+    });
+  });
+}
+
+function setActiveAudio(channelId) {
+  const c = channels.get(channelId);
+  if (!c || !c.ytPlayer || c.embedBlocked) return;
+  if (activeAudioChannelId === channelId) {
+    c.ytPlayer.mute();
+    activeAudioChannelId = null;
+  } else {
+    if (activeAudioChannelId) channels.get(activeAudioChannelId)?.ytPlayer?.mute();
+    c.ytPlayer.unMute();
+    c.ytPlayer.setVolume(100);
+    activeAudioChannelId = channelId;
+  }
+  updateListenButtons();
+}
+
+function updateListenButtons() {
+  channels.forEach((c, id) => {
+    if (!c.listenBtn || c.embedBlocked) return;
+    const on = id === activeAudioChannelId;
+    c.listenBtn.textContent = on ? "🔊 Listening — click to mute" : "🔈 Listen";
+    c.listenBtn.classList.toggle("on", on);
+  });
+}
+
+// On CPU, each worker thread is one fully-loaded model instance — running
+// more channels than that means most channels queue behind the busy ones,
+// and per-segment latency can grow to tens of seconds (confirmed: 8 channels
+// on 2 worker threads with large-v3-int8 measured 0.21x realtime — a caption
+// every ~38s instead of near-live). Surface this instead of leaving people
+// wondering why captions "aren't showing" when they're just badly delayed.
+async function checkOversubscription() {
+  try {
+    const h = await (await fetch("/health")).json();
+    const banner = $("capacityWarning");
+    if (h.worker_threads && channels.size > h.worker_threads) {
+      banner.innerHTML = `⚠ ${channels.size} channels running on only ${h.worker_threads} worker `
+        + `thread(s) — captions can lag tens of seconds behind on CPU. Stop some channels, switch to `
+        + `a faster model (<code>small-int8</code>), or raise <code>STT_WORKER_THREADS</code> if you `
+        + `have the spare CPU cores to back it.`;
+      banner.style.display = "block";
+    } else {
+      banner.style.display = "none";
+    }
+  } catch { /* best-effort; missing health check shouldn't block anything */ }
+}
+
+function setGlobalStatus(html, isError = false) {
+  $("globalStatus").innerHTML = html;
+  $("globalStatus").classList.toggle("err", isError);
+}
+
+function clearEmptyState() {
+  const e = document.querySelector("#channels .empty-state");
+  if (e) e.remove();
+}
+
+function addChannelCard(channel) {
+  if (channels.has(channel.id)) return;
+  clearEmptyState();
+  const el = document.createElement("div");
+  el.className = "card";
+  const srcIcon = channel.source_type === "mic" ? "🎙" : "📡";
+  const isYoutube = channel.source_type === "youtube";
+  el.innerHTML = `
+    <div class="head">
+      <span class="src">${srcIcon}</span>
+      <span class="name" title="${channel.name}">${channel.name}</span>
+      <span class="pill ${channel.status || "starting"}">${channel.status || "starting"}</span>
+      <select class="langSel" title="Transcription language">
+        <option value="auto">Auto</option>
+        <option value="ur">Urdu</option>
+        <option value="en">English</option>
+      </select>
+      <button class="stopBtn" title="Stop this channel">✕</button>
+    </div>
+    ${isYoutube ? '<div class="videoWrap"></div><button class="listenBtn">🔈 Listen</button>' : ""}
+    <div class="feed"></div>
+    <div class="partial"></div>
+    ${channel.url ? `<div class="note" title="${channel.url}">${channel.url}</div>` : ""}
+  `;
+  const langSel = el.querySelector(".langSel");
+  langSel.value = channel.language || "auto";
+  langSel.onchange = () => {
+    ws?.readyState === 1 && ws.send(JSON.stringify({
+      type: "config", channel_id: channel.id, language: langSel.value,
+    }));
+  };
+  el.querySelector(".stopBtn").onclick = () => requestStopChannel(channel.id);
+
+  $("channels").appendChild(el);
+  const entry = {
+    el, feedEl: el.querySelector(".feed"), partialEl: el.querySelector(".partial"),
+    statusEl: el.querySelector(".pill"), langSel, source_type: channel.source_type,
+    videoWrapEl: isYoutube ? el.querySelector(".videoWrap") : null,
+    listenBtn: isYoutube ? el.querySelector(".listenBtn") : null,
+    ytPlayer: null, videoId: null, url: channel.url,
+  };
+  channels.set(channel.id, entry);
+  if (isYoutube) {
+    entry.listenBtn.onclick = () => setActiveAudio(channel.id);
+    if (channel.video_id) createPlayerForChannel(channel.id, channel.video_id);
+  }
+  const quickBtn = quickAddButtons.get(channel.url);
+  if (quickBtn) { quickBtn.disabled = true; quickBtn.textContent = "✓ " + channel.name; }
+  checkOversubscription();
+}
+
+function removeChannelCard(channelId) {
+  const c = channels.get(channelId);
+  if (!c) return;
+  c.ytPlayer?.destroy?.();
+  if (activeAudioChannelId === channelId) activeAudioChannelId = null;
+  c.el.remove();
+  channels.delete(channelId);
+  const match = FAMOUS_PK_CHANNELS.find(ch => ch.url === c.url);
+  const quickBtn = c.url && quickAddButtons.get(c.url);
+  if (quickBtn) { quickBtn.disabled = false; quickBtn.textContent = match ? match.name : quickBtn.textContent; }
+  if (channels.size === 0) {
+    $("channels").innerHTML = '<div class="empty-state">No channels yet — add a YouTube/live URL above, '
+      + 'or start your microphone.<br>Each channel is transcribed independently and its captions appear '
+      + 'below its card.</div>';
+  }
+  checkOversubscription();
+}
+
+function setChannelStatus(channelId, status, detail) {
+  const c = channels.get(channelId);
+  if (!c) return;
+  c.statusEl.textContent = detail ? `${status} — ${detail}` : status;
+  c.statusEl.className = `pill ${status}`;
+}
+
+function requestStopChannel(channelId) {
+  if (channelId === myMicChannelId) stopMicLocal();
+  ws?.readyState === 1 && ws.send(JSON.stringify({ type: "channel_stop", channel_id: channelId }));
+}
+
+async function connect() {
+  let deviceLabel = "model";
+  try {
+    const h = await (await fetch("/health")).json();
+    if (h.device) {
+      const model = (h.model || "").split("/").pop();
+      const db = h.database === "connected" ? "db ✓" : "db ✗ (not saving)";
+      $("subtitle").textContent = [model, h.backend, h.device, `${h.worker_threads}x`, db]
+        .filter(Boolean).join(" · ");
+    }
+  } catch { /* health check is best-effort status text, not required to connect */ }
+
   ws = new WebSocket(`ws://${location.host}/ws`);
   ws.binaryType = "arraybuffer";
-  ws.onopen = () => { setStatus("<b>ready</b> — model on iGPU"); sendConfig(); };
-  ws.onclose = () => { setStatus("disconnected — reload page"); };
+  ws.onopen = () => setGlobalStatus("<b>connected</b>");
+  ws.onclose = () => setGlobalStatus("disconnected — reload page", true);
+  ws.onerror = () => setGlobalStatus("connection error", true);
   ws.onmessage = ev => {
     const m = JSON.parse(ev.data);
-    if (m.type === "partial") {
-      const p = $("partial");
-      if (!m.text) { p.classList.remove("on"); p.textContent = ""; return; }
-      p.setAttribute("dir", /[؀-ۿ]/.test(m.text) ? "rtl" : "ltr");
-      p.textContent = m.text;
-      p.classList.add("on");
+
+    if (m.type === "channels_snapshot") {
+      m.channels.forEach(addChannelCard);
+      return;
+    }
+    if (m.type === "channel_added") { addChannelCard(m.channel); return; }
+    if (m.type === "channel_removed") { removeChannelCard(m.channel_id); return; }
+    if (m.type === "mic_channel_ready") { myMicChannelId = m.channel_id; return; }
+
+    if (m.type === "error" && !m.channel_id) { setGlobalStatus(`<b>error</b> — ${m.detail}`, true); return; }
+
+    const c = channels.get(m.channel_id);
+    if (!c) return;
+
+    if (m.type === "error") {
+      setChannelStatus(m.channel_id, "error", m.detail);
       return;
     }
     if (m.type === "stream_status") {
-      streaming = m.state === "started";
-      $("streamBtn").textContent = streaming ? "⏹ Stop stream" : "📡 Start stream";
-      $("streamBtn").classList.toggle("live", streaming);
-      setStatus(m.state === "started" ? "<b>streaming</b> — pulling audio server-side"
-        : m.state === "error" ? "stream error: " + (m.detail || "unknown")
-        : "<b>ready</b>");
+      if (m.state === "started") {
+        setChannelStatus(m.channel_id, "live");
+        if (m.video_id) createPlayerForChannel(m.channel_id, m.video_id);
+      } else if (m.state === "error") {
+        setChannelStatus(m.channel_id, "error", m.detail);
+      } else if (m.state === "ended" || m.state === "stopped") {
+        setChannelStatus(m.channel_id, "stopped");
+      }
       return;
     }
-    if (m.type !== "segment") return;
-    $("partial").classList.remove("on"); $("partial").textContent = "";
-    const empty = document.querySelector(".empty");
-    if (empty) empty.remove();
-    const rtl = /[؀-ۿ]/.test(m.text);
-    const div = document.createElement("div");
-    div.className = "seg";
-    div.innerHTML =
-      `<div class="meta">${m.t0.toFixed(0)}–${m.t1.toFixed(0)}s · ${m.lang}<br>` +
-      `<span class="rtf">${m.infer_s}s · ${m.rtf}× RT</span></div>` +
-      `<div class="txt" dir="${rtl ? "rtl" : "ltr"}"></div>`;
-    div.querySelector(".txt").textContent = m.text;
-    $("feed").appendChild(div);
-    $("feed").scrollTop = $("feed").scrollHeight;
+    if (m.type === "partial") {
+      if (!m.text) { c.partialEl.classList.remove("on"); c.partialEl.textContent = ""; return; }
+      c.partialEl.setAttribute("dir", RTL.test(m.text) ? "rtl" : "ltr");
+      c.partialEl.textContent = m.text;
+      c.partialEl.classList.add("on");
+      if (c.statusEl.textContent === "starting") setChannelStatus(m.channel_id, "live");
+      return;
+    }
+    if (m.type === "segment") {
+      setChannelStatus(m.channel_id, "live");
+      c.partialEl.classList.remove("on"); c.partialEl.textContent = "";
+      const rtl = RTL.test(m.text);
+      const slow = m.rtf != null && m.rtf < 1;
+      const row = document.createElement("div");
+      row.className = "seg";
+      row.innerHTML = `<div class="meta">${m.t0.toFixed(0)}–${m.t1.toFixed(0)}s · ${m.lang} · `
+        + `${m.infer_s}s${m.rtf ? ` · <span class="${slow ? "rtf-slow" : ""}">${m.rtf}× RT`
+        + `${slow ? " ⚠ slower than realtime" : ""}</span>` : ""}</div>`
+        + `<div class="txt" dir="${rtl ? "rtl" : "ltr"}"></div>`;
+      row.querySelector(".txt").textContent = m.text;
+      c.feedEl.appendChild(row);
+      c.feedEl.scrollTop = c.feedEl.scrollHeight;
+      if (slow) checkOversubscription();
+    }
   };
-}
-
-function sendConfig() {
-  if (ws?.readyState === 1)
-    ws.send(JSON.stringify({ type: "config", language: $("langSel").value }));
 }
 
 async function ensureAudio() {
@@ -178,7 +479,7 @@ async function ensureAudio() {
   await ctx.audioWorklet.addModule(url);
   capNode = new AudioWorkletNode(ctx, "cap");
   capNode.port.onmessage = e => {
-    if (ws?.readyState === 1) ws.send(e.data);
+    if (ws?.readyState === 1 && myMicChannelId) ws.send(e.data);
     const a = new Float32Array(e.data);
     let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * a[i];
     const lvl = Math.min(100, Math.sqrt(s / a.length) * 700);
@@ -190,66 +491,46 @@ async function ensureAudio() {
 async function startMic() {
   await ensureAudio(); await ctx.resume();
   micStream = await navigator.mediaDevices.getUserMedia({
-    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
+    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
   });
   micSrc = ctx.createMediaStreamSource(micStream);
   micSrc.connect(capNode);
+  ws.send(JSON.stringify({
+    type: "channel_start", source: "mic",
+    name: $("micName").value.trim() || "Mic", language: $("micLang").value,
+  }));
   $("micBtn").textContent = "⏹ Stop microphone";
   $("micBtn").classList.replace("primary", "live");
-  setStatus("<b>listening</b> — speak now");
 }
 
-function stopMic() {
+function stopMicLocal() {
   micSrc?.disconnect(); micStream?.getTracks().forEach(t => t.stop());
-  micSrc = micStream = null;
-  ws?.readyState === 1 && ws.send(JSON.stringify({ type: "flush" }));
+  micSrc = micStream = null; myMicChannelId = null;
   $("micBtn").textContent = "🎙 Start microphone";
-  $("micBtn").classList.replace("live", "primary");
-  setStatus("<b>ready</b>"); $("meterFill").style.width = "0%";
+  $("micBtn").classList.remove("live");
+  $("meterFill").style.width = "0%";
 }
 
-async function playDemo(lang) {
-  if (playingDemo) return;
-  await ensureAudio(); await ctx.resume();
-  $("langSel").value = lang; sendConfig();
-  const resp = await fetch(`/demo-audio/${lang}`);
-  const buf = await ctx.decodeAudioData(await resp.arrayBuffer());
-  demoSrc = ctx.createBufferSource();
-  demoSrc.buffer = buf;
-  demoSrc.connect(capNode);       // same path as the microphone
-  demoSrc.connect(ctx.destination); // audible
-  playingDemo = true;
-  const btn = lang === "ur" ? $("demoUrBtn") : $("demoEnBtn");
-  btn.disabled = true;
-  setStatus(`<b>playing ${lang} clip</b> — transcribing live`);
-  demoSrc.onended = () => {
-    playingDemo = false; btn.disabled = false;
-    ws?.readyState === 1 && ws.send(JSON.stringify({ type: "flush" }));
-    setStatus("<b>ready</b>"); $("meterFill").style.width = "0%";
-  };
-  demoSrc.start();
-}
-
-$("micBtn").onclick = () => micStream ? stopMic() : startMic().catch(e => {
-  const hint = e.name === "NotAllowedError"
-    ? "microphone blocked — click the 🔒/🎙 icon in the address bar and allow the mic"
-    : e.name === "NotFoundError" ? "no microphone found on this device"
-    : "mic error: " + e.message;
-  setStatus(hint);
-});
-$("streamBtn").onclick = () => {
-  if (ws?.readyState !== 1) return;
-  if (streaming) { ws.send(JSON.stringify({ type: "stream_stop" })); return; }
-  const url = $("streamUrl").value.trim();
-  if (!url) { setStatus("paste a stream URL first"); return; }
-  if (micStream) stopMic();
-  ws.send(JSON.stringify({ type: "stream_start", url }));
-  setStatus("starting stream — first audio can take ~10–20 s…");
+$("micBtn").onclick = () => {
+  if (myMicChannelId) { requestStopChannel(myMicChannelId); return; }
+  startMic().catch(e => {
+    const hint = e.name === "NotAllowedError"
+      ? "microphone blocked — click the 🔒/🎙 icon in the address bar and allow the mic"
+      : e.name === "NotFoundError" ? "no microphone found on this device"
+      : "mic error: " + e.message;
+    setGlobalStatus(hint, true);
+  });
 };
-$("demoUrBtn").onclick = () => playDemo("ur");
-$("demoEnBtn").onclick = () => playDemo("en");
-$("clearBtn").onclick = () => { $("feed").innerHTML = '<div class="empty">Cleared.</div>'; };
-$("langSel").onchange = sendConfig;
+
+$("addChannelBtn").onclick = () => {
+  const url = $("chUrl").value.trim();
+  if (!url) { setGlobalStatus("paste a YouTube/stream URL first", true); return; }
+  const name = $("chName").value.trim() || "Channel";
+  ws.send(JSON.stringify({ type: "channel_start", source: "youtube", name, url, language: $("chLang").value }));
+  $("chName").value = ""; $("chUrl").value = "";
+};
+$("chUrl").addEventListener("keydown", e => { if (e.key === "Enter") $("addChannelBtn").click(); });
+
 connect();
 </script>
 </body>

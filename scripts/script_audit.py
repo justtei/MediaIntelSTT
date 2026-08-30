@@ -26,7 +26,7 @@ def in_arabic_block(ch: str) -> bool:
     return any(lo <= cp <= hi for lo, hi in ARABIC_BLOCKS)
 
 
-def audit(text: str) -> int:
+def audit(text: str, language: str = "ur") -> int:
     letters = [c for c in text if c.isalpha()]
     if not letters:
         print("no letters found — empty or non-text output"); return 1
@@ -37,20 +37,32 @@ def audit(text: str) -> int:
     markers = Counter(c for c in letters if c in URDU_MARKERS)
     drift = Counter(c for c in letters if c in ARABIC_DRIFT)
 
+    if language == "auto":
+        language = "ur" if arabic >= latin else "en"
+        print(f"(auto-detected: {'Perso-Arabic' if language == 'ur' else 'Latin'} dominant -> "
+              f"validating as {language})")
+
     print(f"letters: {n}")
     print(f"  Perso-Arabic script: {arabic/n:6.1%}")
     print(f"  Latin (romanized?):  {latin/n:6.1%}")
     print(f"  other:               {other/n:6.1%}")
-    print(f"Urdu-specific letters seen: {sum(markers.values())} "
-          f"({', '.join(sorted(markers)) if markers else 'NONE'})")
+    if language == "ur":
+        print(f"Urdu-specific letters seen: {sum(markers.values())} "
+              f"({', '.join(sorted(markers)) if markers else 'NONE'})")
     if drift:
         print("Arabic-drift characters (normalize before WER, or the model is drifting):")
         for ch, cnt in drift.most_common():
             print(f"  {ch}  x{cnt}  {ARABIC_DRIFT[ch]}")
 
-    ok = arabic / n >= 0.9 and markers
-    print("\nVERDICT:", "OK — output is Urdu script" if ok else
-          "SUSPECT — check for romanization or wrong-language decode")
+    if language == "ur":
+        ok = arabic / n >= 0.9 and bool(markers)
+        verdict = ("OK — output is Urdu script" if ok else
+                   "SUSPECT — check for romanization or wrong-language decode")
+    else:  # en
+        ok = latin / n >= 0.9
+        verdict = ("OK — output is English/Latin script" if ok else
+                   "SUSPECT — check for wrong-language decode")
+    print("\nVERDICT:", verdict)
     return 0 if ok else 1
 
 
@@ -59,5 +71,7 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
     ap.add_argument("transcript")
+    ap.add_argument("--language", choices=["ur", "en", "auto"], default="ur",
+                     help="expected script to validate against (default: ur)")
     args = ap.parse_args()
-    sys.exit(audit(Path(args.transcript).read_text(encoding="utf-8")))
+    sys.exit(audit(Path(args.transcript).read_text(encoding="utf-8"), args.language))

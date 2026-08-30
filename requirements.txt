@@ -1,0 +1,16 @@
+# Frozen from the verified-working .venv per PROJECT_DOCUMENTATION.md §6.
+# No requirements.txt previously existed in this repo (documented as issue #1 /
+# audit §7.2) — this file closes that gap.
+openvino==2026.2.1
+openvino-genai==2026.2.1.0
+openvino-tokenizers==2026.2.1.0
+faster-whisper==1.2.1
+ctranslate2==4.8.1
+fastapi==0.141.1
+uvicorn==0.52.0
+websockets==17.1
+jiwer==4.0.0
+numpy==2.4.6
+huggingface_hub==1.26.0
+yt-dlp==2026.7.4
+asyncpg==0.31.0

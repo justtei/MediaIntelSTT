@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-stt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stt}
+      POSTGRES_DB: ${POSTGRES_DB:-stt}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - stt_pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-stt} -d ${POSTGRES_DB:-stt}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  stt_pgdata:
