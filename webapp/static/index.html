@@ -711,13 +711,8 @@
     <!-- Add Channel Bar -->
     <div class="panel">
       <div class="bar">
-        <input id="chName" type="text" placeholder="Channel name (e.g. Samaa TV)" style="flex: 0 1 200px">
+        <input id="chName" type="text" placeholder="Channel name (e.g. Samaa TV)" style="flex: 0 1 240px">
         <input id="chUrl" type="text" placeholder="Paste YouTube Live URL or Stream URL">
-        <select id="chLang" title="Transcription language">
-          <option value="ur" selected>اردو — Urdu (Recommended)</option>
-          <option value="auto">Auto (Urdu + English)</option>
-          <option value="en">English only</option>
-        </select>
         <button id="addChannelBtn" class="primary">➕ Add Channel</button>
       </div>
     </div>
@@ -731,12 +726,7 @@
     <!-- Microphone Bar -->
     <div class="panel">
       <div class="bar">
-        <input id="micName" type="text" placeholder="Mic label (e.g. Studio Desk)" style="flex: 0 1 200px">
-        <select id="micLang" title="Transcription language">
-          <option value="ur" selected>اردو — Urdu</option>
-          <option value="auto">Auto (Urdu + English)</option>
-          <option value="en">English only</option>
-        </select>
+        <input id="micName" type="text" placeholder="Mic label (e.g. Studio Desk)" style="flex: 0 1 240px">
         <button id="micBtn">🎙 Start Microphone</button>
         <div id="meter">
           <div id="meterFill"></div>
@@ -890,11 +880,6 @@
       <span class="src">${srcIcon}</span>
       <span class="name" title="${channel.name}">${channel.name}</span>
       <span class="pill ${channel.status || "starting"}">${channel.status === "starting" ? "⏳ Connecting…" : (channel.status || "starting")}</span>
-      <select class="langSel" title="Language">
-        <option value="ur">Urdu</option>
-        <option value="auto">Auto</option>
-        <option value="en">English</option>
-      </select>
       <button class="stopBtn" title="Close channel">✕</button>
     </div>
     ${isYoutube ? '<div class="videoWrap"></div><div class="card-actions-bar"><button class="listenBtn">🔈 Listen Audio</button></div>' : ''}
@@ -924,13 +909,6 @@
     ${channel.url ? `<div class="footer-info" title="${channel.url}">${channel.url}</div>` : ""}
   `;
 
-      const langSel = el.querySelector(".langSel");
-      langSel.value = channel.language || "ur";
-      langSel.onchange = () => {
-        ws?.readyState === 1 && ws.send(JSON.stringify({
-          type: "config", channel_id: channel.id, language: langSel.value,
-        }));
-      };
       el.querySelector(".stopBtn").onclick = () => requestStopChannel(channel.id);
 
       const feedEl = el.querySelector(".feed");
@@ -967,7 +945,7 @@
 
       const entry = {
         el, feedEl, liveBox, liveTextEl, liveRtfEl,
-        statusEl: el.querySelector(".pill"), langSel, source_type: channel.source_type,
+        statusEl: el.querySelector(".pill"), source_type: channel.source_type,
         videoWrapEl: isYoutube ? el.querySelector(".videoWrap") : null,
         listenBtn: isYoutube ? el.querySelector(".listenBtn") : null,
         ytPlayer: null, videoId: null, url: channel.url,
@@ -1119,8 +1097,8 @@
         <div class="txt" dir="${rtl ? 'rtl' : 'ltr'}"></div>
       `;
           row.querySelector(".txt").textContent = m.text;
-          c.feedEl.appendChild(row);
-          c.feedEl.scrollTop = c.feedEl.scrollHeight;
+          c.feedEl.prepend(row);
+          c.feedEl.scrollTop = 0;
 
           const totalLines = c.feedEl.querySelectorAll(".seg").length;
           const countBadge = c.el.querySelector(".line-count-badge");
@@ -1190,7 +1168,7 @@
       micSrc.connect(capNode);
       ws.send(JSON.stringify({
         type: "channel_start", source: "mic",
-        name: $("micName").value.trim() || "Microphone", language: $("micLang").value,
+        name: $("micName").value.trim() || "Microphone", language: "ur",
       }));
       $("micBtn").textContent = "⏹ Stop Microphone";
       $("micBtn").classList.add("live");
@@ -1219,7 +1197,7 @@
       const url = $("chUrl").value.trim();
       if (!url) { setGlobalStatus("Please paste a YouTube URL first", true); return; }
       const name = $("chName").value.trim() || "Channel";
-      ws.send(JSON.stringify({ type: "channel_start", source: "youtube", name, url, language: $("chLang").value }));
+      ws.send(JSON.stringify({ type: "channel_start", source: "youtube", name, url, language: "ur" }));
       $("chName").value = ""; $("chUrl").value = "";
     };
     $("chUrl").addEventListener("keydown", e => { if (e.key === "Enter") $("addChannelBtn").click(); });

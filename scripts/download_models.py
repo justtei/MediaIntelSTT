@@ -9,10 +9,12 @@ from pathlib import Path
 
 import os
 import certifi
+import httpx
+from huggingface_hub.utils import set_client_factory, set_async_client_factory
 from huggingface_hub import snapshot_download
 
-os.environ["SSL_CERT_FILE"] = certifi.where()
-os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
+set_client_factory(lambda: httpx.Client(verify=certifi.where()))
+set_async_client_factory(lambda: httpx.AsyncClient(verify=certifi.where()))
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CHOICES = {

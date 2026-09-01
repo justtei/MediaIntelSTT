@@ -247,10 +247,9 @@ app = FastAPI(lifespan=lifespan)
 
 
 class Segmenter:
-    """Buffers a PCM stream, cuts on silence (hard cap MAX_SEG_S), transcribes
-    finals and rolling partials on the worker pool, and reports via `send`
-    (async). Backend errors are caught per-segment so one bad decode doesn't
-    take down the whole channel."""
+    """Buffers a PCM stream, cuts on silence (hard cap MAX_SEG_S), queues segments
+    asynchronously so audio ingestion is NEVER blocked, and transcribes finals
+    and rolling partials on the worker pool."""
 
     def __init__(self, send, get_language, get_prompt, source: str):
         self.send = send
@@ -264,62 +263,86 @@ class Segmenter:
         self.gen = 0
         self.partial_busy = False
         self.last_partial = 0.0
+        self._queue: asyncio.Queue = asyncio.Queue(maxsize=30)
+        self._closed = False
+        self._worker_task = asyncio.create_task(self._process_queue())
+
+    async def _process_queue(self):
+        while not self._closed:
+            try:
+                item = await self._queue.get()
+            except asyncio.CancelledError:
+                break
+            if item is None:
+                self._queue.task_done()
+                break
+            samples, t_start, t_end, seg_dur, reason = item
+            try:
+                if float(np.sqrt(np.mean(samples ** 2))) < SKIP_RMS:
+                    await self.send({"type": "partial", "text": ""})
+                    continue
+                lang = self.get_language()
+                text, dt = await self.loop.run_in_executor(
+                    worker, _transcribe, samples, lang, self.get_prompt(), False
+                )
+                if text:
+                    await self.send({
+                        "type": "segment", "text": text, "t0": round(t_start, 1),
+                        "t1": round(t_end, 1), "infer_s": round(dt, 2),
+                        "rtf": round(seg_dur / dt, 2) if dt > 0 else None, "lang": lang,
+                        "reason": reason, "source": self.source,
+                    })
+            except Exception:
+                log.exception("transcribe failed on a %s segment (source=%s)", self.source, self.source)
+                await self.send({"type": "error", "detail": "transcription failed on this segment",
+                                  "source": self.source})
+            finally:
+                self._queue.task_done()
 
     async def feed(self, chunk: np.ndarray):
         self.buf.append(chunk)
         self.buf_len += len(chunk)
         total_s = self.buf_len / SR
         if total_s >= MAX_SEG_S:
-            await self.flush("max")
+            self._cut_segment("max")
             return
         if total_s >= MIN_SEG_S:
             tail = np.concatenate(self.buf)[-int(SIL_WIN_S * SR):]
             if float(np.sqrt(np.mean(tail ** 2))) < SIL_RMS:
-                await self.flush("silence")
+                self._cut_segment("silence")
                 return
         if (total_s >= PARTIAL_MIN_S and not self.partial_busy
+                and self._queue.empty()
                 and self.loop.time() - self.last_partial >= PARTIAL_GAP_S):
-            asyncio.ensure_future(self.partial())
+            asyncio.create_task(self.partial())
 
-    async def flush(self, reason: str):
+    def _cut_segment(self, reason: str):
         self.gen += 1
         if not self.buf_len:
             return
-        self.partial_busy = True
+        samples = np.concatenate(self.buf)
+        self.buf, self.buf_len = [], 0
+        seg_dur = len(samples) / SR
+        t_start = self.clock
+        self.clock += seg_dur
         try:
-            samples = np.concatenate(self.buf)
-            self.buf, self.buf_len = [], 0
-            seg_dur = len(samples) / SR
-            t_start = self.clock
-            self.clock += seg_dur
-            if float(np.sqrt(np.mean(samples ** 2))) < SKIP_RMS:
-                await self.send({"type": "partial", "text": ""})
-                return  # silence-only segment — transcribing it just invites hallucination
-            lang = self.get_language()
+            self._queue.put_nowait((samples, t_start, self.clock, seg_dur, reason))
+        except asyncio.QueueFull:
+            log.warning("segment queue full for %s", self.source)
+
+    async def flush(self, reason: str):
+        self._cut_segment(reason)
+        if not self._queue.empty():
             try:
-                text, dt = await self.loop.run_in_executor(
-                    worker, _transcribe, samples, lang, self.get_prompt(), False)
-            except Exception:
-                log.exception("transcribe failed on a %s segment (source=%s)", self.source, self.source)
-                await self.send({"type": "error", "detail": "transcription failed on this segment",
-                                  "source": self.source})
-                return
-            if text:
-                await self.send({
-                    "type": "segment", "text": text, "t0": round(t_start, 1),
-                    "t1": round(self.clock, 1), "infer_s": round(dt, 2),
-                    "rtf": round(seg_dur / dt, 2) if dt > 0 else None, "lang": lang,
-                    "reason": reason, "source": self.source,
-                })
-        finally:
-            self.partial_busy = False
-            self.last_partial = self.loop.time()
+                await asyncio.wait_for(self._queue.join(), timeout=4.0)
+            except asyncio.TimeoutError:
+                pass
 
     async def partial(self):
+        if self.partial_busy or not self.buf or not self._queue.empty():
+            return
         self.partial_busy = True
         try:
-            if not self.buf:
-                return
             my_gen = self.gen
             samples = np.concatenate(self.buf)
             if float(np.sqrt(np.mean(samples ** 2))) < SKIP_RMS:
@@ -328,13 +351,17 @@ class Segmenter:
                 text, _ = await self.loop.run_in_executor(
                     worker, _transcribe, samples, self.get_language(), self.get_prompt(), True)
             except Exception:
-                log.exception("partial transcribe failed (source=%s)", self.source)
                 return
-            if self.gen == my_gen and text:  # buffer wasn't flushed mid-decode
+            if self.gen == my_gen and text:
                 await self.send({"type": "partial", "text": text})
         finally:
             self.partial_busy = False
             self.last_partial = self.loop.time()
+
+    def close(self):
+        self._closed = True
+        if self._worker_task and not self._worker_task.done():
+            self._worker_task.cancel()
 
 
 def _deno_path() -> Optional[str]:
@@ -636,6 +663,7 @@ async def stop_channel(channel_id: str, reason: str = "stopped"):
         return
     if channel.puller:
         channel.puller.stop()
+    channel.segmenter.close()
     channel.status = "stopped"
     if db.is_connected():
         try:

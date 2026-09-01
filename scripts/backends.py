@@ -65,7 +65,12 @@ class OpenVINOBackend(Backend):
             tried.append(candidate)
             try:
                 logger.info("loading %s on %s ...", model_dir, candidate)
-                self.pipe = openvino_genai.WhisperPipeline(str(model_dir), device=candidate)
+                if candidate in ("GPU", "GPU.0", "GPU.1"):
+                    self.pipe = openvino_genai.WhisperPipeline(
+                        str(model_dir), device=candidate, PERFORMANCE_HINT="LATENCY"
+                    )
+                else:
+                    self.pipe = openvino_genai.WhisperPipeline(str(model_dir), device=candidate)
                 self.device = candidate
                 break
             except Exception as e:
@@ -85,9 +90,10 @@ class OpenVINOBackend(Backend):
         config.task = "transcribe"
         config.return_timestamps = return_timestamps
         if is_partial:
-            config.max_new_tokens = 32
+            config.max_new_tokens = 24
         else:
-            config.max_new_tokens = 90
+            dur_s = len(samples) / 16000 if hasattr(samples, "__len__") else 3.0
+            config.max_new_tokens = min(64, max(24, int(dur_s * 16)))
         if language != "auto":
             config.language = f"<|{language}|>"
         if initial_prompt:
