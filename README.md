@@ -53,7 +53,13 @@ $env:STT_MODEL="models/whisper-small-int8-ov"; $env:STT_WORKER_THREADS="1"; .ven
 # Bash (Linux/macOS):
 STT_MODEL=models/whisper-small-int8-ov STT_WORKER_THREADS=1 python webapp/server.py
 
-# Option B: Large-v3 Model (High Accuracy, Higher Compute)
+# Option B: Medium Model (Balanced — Better Accuracy than Small, 3x Faster than Large)
+# PowerShell (Windows):
+$env:STT_MODEL="models/whisper-medium-int8-ov"; $env:STT_WORKER_THREADS="1"; .venv\Scripts\python webapp/server.py
+# Bash (Linux/macOS):
+STT_MODEL=models/whisper-medium-int8-ov STT_WORKER_THREADS=1 python webapp/server.py
+
+# Option C: Large-v3 Model (High Accuracy, Higher Compute)
 # PowerShell (Windows):
 $env:STT_MODEL="models/whisper-large-v3-int8-ov"; $env:STT_WORKER_THREADS="1"; .venv\Scripts\python webapp/server.py
 # Bash (Linux/macOS):

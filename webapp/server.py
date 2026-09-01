@@ -133,6 +133,9 @@ def _get_default_model(backend: str) -> str:
         small_ov = PROJECT / "models" / "whisper-small-int8-ov"
         if small_ov.is_dir():
             return str(small_ov)
+        medium_ov = PROJECT / "models" / "whisper-medium-int8-ov"
+        if medium_ov.is_dir():
+            return str(medium_ov)
         large_ov = PROJECT / "models" / "whisper-large-v3-int8-ov"
         if large_ov.is_dir():
             return str(large_ov)
@@ -140,7 +143,15 @@ def _get_default_model(backend: str) -> str:
     return "small"
 
 
-MODEL = os.environ.get("STT_MODEL") or _get_default_model(BACKEND_NAME)
+_env_model = os.environ.get("STT_MODEL")
+if _env_model in ("medium", "medium-int8"):
+    MODEL = str(PROJECT / "models" / "whisper-medium-int8-ov")
+elif _env_model in ("small", "small-int8"):
+    MODEL = str(PROJECT / "models" / "whisper-small-int8-ov")
+elif _env_model in ("large", "large-v3", "large-v3-int8"):
+    MODEL = str(PROJECT / "models" / "whisper-large-v3-int8-ov")
+else:
+    MODEL = _env_model or _get_default_model(BACKEND_NAME)
 
 _default_workers = 1
 WORKER_THREADS = int(os.environ.get("STT_WORKER_THREADS", str(_default_workers)))
