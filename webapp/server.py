@@ -92,11 +92,15 @@ if hasattr(sys.stdout, "reconfigure"):
 
 ROOT = Path(__file__).resolve().parent
 PROJECT = ROOT.parent
-sys.path.insert(0, str(PROJECT / "scripts"))
-import db  # noqa: E402
-from audio_io import find_ffmpeg  # noqa: E402
-from backends import Backend, BackendLoadError, load_backend  # noqa: E402
-from url_safety import DEFAULT_ALLOWED_HOSTS, validate_stream_url  # noqa: E402
+if str(PROJECT) not in sys.path:
+    sys.path.insert(0, str(PROJECT))
+if str(PROJECT / "scripts") not in sys.path:
+    sys.path.insert(0, str(PROJECT / "scripts"))
+
+from scripts import db  # noqa: E402
+from scripts.audio_io import find_ffmpeg  # noqa: E402
+from scripts.backends import Backend, BackendLoadError, load_backend  # noqa: E402
+from scripts.url_safety import DEFAULT_ALLOWED_HOSTS, validate_stream_url  # noqa: E402
 
 logging.basicConfig(
     level=os.environ.get("STT_LOG_LEVEL", "INFO").upper(),
@@ -124,20 +128,22 @@ if BACKEND_NAME not in ("openvino", "faster-whisper"):
 DEFAULT_DEVICE = {"openvino": "CPU", "faster-whisper": "cpu"}
 DEVICE = os.environ.get("STT_DEVICE") or DEFAULT_DEVICE[BACKEND_NAME]
 
-if BACKEND_NAME == "openvino":
-    # small-int8, not large-v3-int8: measured on this project's own CPU dev
-    # machine (Intel i5-8250U), large-v3-int8 ran at 0.2x realtime even for a
-    # single channel — genuinely unusable for *live* captioning, matching
-    # what the README already documents ("well below realtime on CPU"). This
-    # is a live-transcription server; defaulting to a model that can't keep
-    # up with real time defeats the point. small-int8 measured 1.2-2.6x
-    # realtime on the same hardware. Set STT_MODEL to opt back into
-    # large-v3-int8 (worth it on GPU/CUDA, or if you accept the delay).
-    MODEL = os.environ.get("STT_MODEL") or str(PROJECT / "models" / "whisper-small-int8-ov")
-else:
-    MODEL = os.environ.get("STT_MODEL") or "small"
+def _get_default_model(backend: str) -> str:
+    if backend == "openvino":
+        small_ov = PROJECT / "models" / "whisper-small-int8-ov"
+        if small_ov.is_dir():
+            return str(small_ov)
+        large_ov = PROJECT / "models" / "whisper-large-v3-int8-ov"
+        if large_ov.is_dir():
+            return str(large_ov)
+        return str(small_ov)
+    return "small"
 
-WORKER_THREADS = int(os.environ.get("STT_WORKER_THREADS", "2"))
+
+MODEL = os.environ.get("STT_MODEL") or _get_default_model(BACKEND_NAME)
+
+_default_workers = 1
+WORKER_THREADS = int(os.environ.get("STT_WORKER_THREADS", str(_default_workers)))
 INITIAL_PROMPT = os.environ.get("STT_INITIAL_PROMPT") or None
 HOST = os.environ.get("STT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("STT_PORT", "8000"))
@@ -151,12 +157,12 @@ ALLOWED_STREAM_HOSTS = (
 )
 
 SR = 16000
-MIN_SEG_S = _env_float("STT_MIN_SEG_S", 2.5)      # don't transcribe fragments shorter than this on silence
-MAX_SEG_S = _env_float("STT_MAX_SEG_S", 8.0)       # hard flush — bounds latency
-SIL_WIN_S = _env_float("STT_SIL_WIN_S", 0.7)       # trailing window checked for silence
+MIN_SEG_S = _env_float("STT_MIN_SEG_S", 1.5)      # don't transcribe fragments shorter than this on silence
+MAX_SEG_S = _env_float("STT_MAX_SEG_S", 3.5)       # hard flush — bounds latency
+SIL_WIN_S = _env_float("STT_SIL_WIN_S", 0.35)      # trailing window checked for silence
 SIL_RMS = _env_float("STT_SIL_RMS", 0.010)
 SKIP_RMS = _env_float("STT_SKIP_RMS", 0.004)       # whole-segment RMS below this = no speech, drop it
-PARTIAL_MIN_S = _env_float("STT_PARTIAL_MIN_S", 1.2)  # start showing live partials once buffer has this much
+PARTIAL_MIN_S = _env_float("STT_PARTIAL_MIN_S", 1.0)  # start showing live partials once buffer has this much
 PARTIAL_GAP_S = _env_float("STT_PARTIAL_GAP_S", 0.8)  # min wall-clock between partial decodes
 
 MAX_WS_BINARY_BYTES = int(os.environ.get("STT_MAX_WS_BINARY_BYTES", str(4 * 1024 * 1024)))  # 4 MB/frame
@@ -186,11 +192,13 @@ def _load_backend_pool(n: int) -> str:
     return device
 
 
-def _transcribe(samples: np.ndarray, language: str, initial_prompt: Optional[str]):
+def _transcribe(samples: np.ndarray, language: str, initial_prompt: Optional[str], is_partial: bool = False):
     b = _backend_pool.get()
     try:
         t0 = time.perf_counter()
-        text, _chunks = b.transcribe(samples, language, initial_prompt=initial_prompt)
+        text, _chunks = b.transcribe(
+            samples, language, initial_prompt=initial_prompt, is_partial=is_partial, return_timestamps=False
+        )
         return text, time.perf_counter() - t0
     finally:
         _backend_pool.put(b)
@@ -214,9 +222,8 @@ async def lifespan(app: FastAPI):
     try:
         await db.connect()
         log.info("connected to database")
-    except Exception:
-        log.warning("database unavailable — segments will not be persisted "
-                     "(run `docker compose up -d` and check DATABASE_URL)", exc_info=True)
+    except Exception as e:
+        log.warning("database unavailable (%s) — running without persistence (run `docker compose up -d` if Postgres is desired)", e)
 
     yield
 
@@ -267,30 +274,35 @@ class Segmenter:
         self.gen += 1
         if not self.buf_len:
             return
-        samples = np.concatenate(self.buf)
-        self.buf, self.buf_len = [], 0
-        seg_dur = len(samples) / SR
-        t_start = self.clock
-        self.clock += seg_dur
-        if float(np.sqrt(np.mean(samples ** 2))) < SKIP_RMS:
-            await self.send({"type": "partial", "text": ""})
-            return  # silence-only segment — transcribing it just invites hallucination
-        lang = self.get_language()
+        self.partial_busy = True
         try:
-            text, dt = await self.loop.run_in_executor(
-                worker, _transcribe, samples, lang, self.get_prompt())
-        except Exception:
-            log.exception("transcribe failed on a %s segment (source=%s)", self.source, self.source)
-            await self.send({"type": "error", "detail": "transcription failed on this segment",
-                              "source": self.source})
-            return
-        if text:
-            await self.send({
-                "type": "segment", "text": text, "t0": round(t_start, 1),
-                "t1": round(self.clock, 1), "infer_s": round(dt, 2),
-                "rtf": round(seg_dur / dt, 2) if dt > 0 else None, "lang": lang,
-                "reason": reason, "source": self.source,
-            })
+            samples = np.concatenate(self.buf)
+            self.buf, self.buf_len = [], 0
+            seg_dur = len(samples) / SR
+            t_start = self.clock
+            self.clock += seg_dur
+            if float(np.sqrt(np.mean(samples ** 2))) < SKIP_RMS:
+                await self.send({"type": "partial", "text": ""})
+                return  # silence-only segment — transcribing it just invites hallucination
+            lang = self.get_language()
+            try:
+                text, dt = await self.loop.run_in_executor(
+                    worker, _transcribe, samples, lang, self.get_prompt(), False)
+            except Exception:
+                log.exception("transcribe failed on a %s segment (source=%s)", self.source, self.source)
+                await self.send({"type": "error", "detail": "transcription failed on this segment",
+                                  "source": self.source})
+                return
+            if text:
+                await self.send({
+                    "type": "segment", "text": text, "t0": round(t_start, 1),
+                    "t1": round(self.clock, 1), "infer_s": round(dt, 2),
+                    "rtf": round(seg_dur / dt, 2) if dt > 0 else None, "lang": lang,
+                    "reason": reason, "source": self.source,
+                })
+        finally:
+            self.partial_busy = False
+            self.last_partial = self.loop.time()
 
     async def partial(self):
         self.partial_busy = True
@@ -303,7 +315,7 @@ class Segmenter:
                 return
             try:
                 text, _ = await self.loop.run_in_executor(
-                    worker, _transcribe, samples, self.get_language(), self.get_prompt())
+                    worker, _transcribe, samples, self.get_language(), self.get_prompt(), True)
             except Exception:
                 log.exception("partial transcribe failed (source=%s)", self.source)
                 return
@@ -363,7 +375,7 @@ def _resolve_media_url(url: str) -> ResolvedStream:
 
 class StreamPuller:
     """yt-dlp resolves the direct media URL once; ffmpeg then reads it
-    directly (-re, realtime-paced) -> float32 16 kHz PCM -> Segmenter. A
+    directly (low latency stream mode) -> float32 16 kHz PCM -> Segmenter. A
     single subprocess handles the actual media transport — see
     _resolve_media_url for why yt-dlp isn't kept running as a pipe source.
 
@@ -401,10 +413,17 @@ class StreamPuller:
         if self._stopped:  # channel was stopped while the (unbounded-by-us) resolve was in flight
             return
 
-        ffmpeg = subprocess.Popen(
-            [find_ffmpeg(), "-v", "error", "-re", "-i", resolved.media_url,
-             "-ac", "1", "-ar", str(SR), "-f", "f32le", "pipe:1"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        ffmpeg_cmd = [
+            find_ffmpeg(),
+            "-v", "error",
+            "-re",
+            "-i", resolved.media_url,
+            "-ac", "1",
+            "-ar", str(SR),
+            "-f", "f32le",
+            "pipe:1",
+        ]
+        ffmpeg = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if self._stopped:  # stop() raced us between resolve and spawn
             ffmpeg.kill()
             return
@@ -415,7 +434,7 @@ class StreamPuller:
 
     async def _pump(self, ffmpeg):
         loop = asyncio.get_running_loop()
-        chunk_bytes = int(SR * 0.5) * 4  # 0.5 s per read
+        chunk_bytes = int(SR * 0.25) * 4  # 0.25 s per read for low latency
         got_data = False
         try:
             try:
@@ -697,6 +716,8 @@ async def ws_endpoint(ws: WebSocket):
     try:
         while True:
             msg = await ws.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
             if msg.get("text") is not None:
                 try:
                     data = json.loads(msg["text"])
@@ -765,7 +786,7 @@ async def ws_endpoint(ws: WebSocket):
                     await send({"type": "error", "detail": "binary frame too large, dropped"})
                     continue
                 await CHANNELS[mic_channel_id].segmenter.feed(np.frombuffer(payload, dtype=np.float32))
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         pass
     except Exception:
         log.exception("unhandled error in /ws connection")

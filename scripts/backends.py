@@ -28,7 +28,14 @@ class Backend:
     name: str
     device: str
 
-    def transcribe(self, samples, language: str, initial_prompt: str | None = None):
+    def transcribe(
+        self,
+        samples,
+        language: str,
+        initial_prompt: str | None = None,
+        is_partial: bool = False,
+        return_timestamps: bool = False,
+    ):
         raise NotImplementedError
 
 
@@ -66,14 +73,26 @@ class OpenVINOBackend(Backend):
         if self.pipe is None:
             raise BackendLoadError(f"OpenVINO pipeline failed to load on any of {tried}")
 
-    def transcribe(self, samples, language: str, initial_prompt: str | None = None):
+    def transcribe(
+        self,
+        samples,
+        language: str,
+        initial_prompt: str | None = None,
+        is_partial: bool = False,
+        return_timestamps: bool = False,
+    ):
         config = self.pipe.get_generation_config()
         config.task = "transcribe"
-        config.return_timestamps = True
+        config.return_timestamps = return_timestamps
+        if is_partial:
+            config.max_new_tokens = 32
+        else:
+            config.max_new_tokens = 90
         if language != "auto":
             config.language = f"<|{language}|>"
         if initial_prompt:
             config.initial_prompt = initial_prompt
+
         result = self.pipe.generate(samples, config)
         chunks = [Segment(c.start_ts, c.end_ts, c.text.strip()) for c in (result.chunks or [])]
         return str(result).strip(), chunks
@@ -100,12 +119,21 @@ class FasterWhisperBackend(Backend):
         if self.model is None:
             raise BackendLoadError(f"faster-whisper failed to load on any of {tried}")
 
-    def transcribe(self, samples, language: str, initial_prompt: str | None = None):
+    def transcribe(
+        self,
+        samples,
+        language: str,
+        initial_prompt: str | None = None,
+        is_partial: bool = False,
+        return_timestamps: bool = False,
+    ):
         segments, info = self.model.transcribe(
             samples,
             language=None if language == "auto" else language,
-            vad_filter=True,
-            beam_size=5,
+            vad_filter=False,
+            beam_size=1,
+            best_of=1,
+            temperature=0.0,
             initial_prompt=initial_prompt,
         )
         chunks, parts = [], []

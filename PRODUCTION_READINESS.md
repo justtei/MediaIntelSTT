@@ -214,7 +214,7 @@ Fixed two real gaps found while verifying captions render properly:
    Nastaliq's diagonal stacking needs more vertical room than Naskh-style
    Arabic fonts or Latin text.
 
-Verified live (Geo News, `language: ur` forced): both live-partial and
+Verified live (Samaa TV, `language: ur` forced): both live-partial and
 finalized captions render in genuine Nastaliq calligraphy (diagonal,
 cascading letterforms — confirmed via zoomed screenshot, not just "text
 appeared"), correctly right-aligned.
@@ -227,7 +227,7 @@ is silently wrong for this project's purpose — the corpus is meant to be
 Urdu, and Hindi-script output would contaminate it even though the words
 are often intelligible. **Forcing a channel's language to `ur` (not `auto`)
 avoided it entirely** in repeated testing. Given every Urdu channel tested
-(Geo News, ARY News, Dunya News, Samaa TV) is Urdu-primary with only
+(Dunya News, Samaa TV) is Urdu-primary with only
 occasional English words, `auto`'s main value — correctly identifying
 pure-English segments — is a smaller win than the risk of silent Hindi
 contamination. Recommendation for real deployment: default new Urdu-market
@@ -239,7 +239,7 @@ tradeoff worth deciding deliberately, not a default to flip silently.
 ## Quick-add row for major Pakistani news channels
 
 Eight one-click buttons (`FAMOUS_PK_CHANNELS` in `webapp/static/index.html`):
-Geo News, ARY News, Dunya News, Samaa TV, Express News, 92 News HD, BOL
+Dunya News, Samaa TV, Express News, 92 News HD, BOL
 News, Aaj News. Every handle was verified via live YouTube search before
 use — a repeat of the earlier lesson: a guessed ARY handle 404'd, the real
 one only surfaced by actually checking. Quick-add explicitly sends
@@ -261,7 +261,7 @@ returns the video id, threaded through `StreamPuller` → the `stream_status`
 event → `Channel.video_id` → `channel.public()`, so both brand-new and
 reconnecting dashboards get it.
 
-**Real constraint found, not a bug**: some channels (Geo News, ARY News)
+**Real constraint found, not a bug**: some channels
 disable YouTube embedding at the channel-owner level — the IFrame player
 fires an `onError`, showing YouTube's bare "Video unavailable" box. Since
 this is unrelated to whether transcription works (that's a separate
@@ -272,16 +272,12 @@ player. Confirmed: those channels kept transcribing correctly throughout.
 
 ### Verified live with real Urdu news channels
 
-Geo News (`@geonews`), ARY News (`@ArynewsTvofficial`), Dunya News
-(`@DunyanewsOfficial`), and Samaa TV (`@Samaatv`) — four real, live Pakistani
+Dunya News(`@DunyanewsOfficial`), and Samaa TV (`@Samaatv`) — four real, live Pakistani
 news broadcasts — added **concurrently** (`STT_WORKER_THREADS=2`,
 `small-int8`/CPU) through the actual dashboard. All four transcribed real
 Urdu speech correctly, e.g.:
 
 ```
-ARY News — live — 0.75× realtime
-  "کبھی اصل دہل کی شادی کے مطابق جو ہے وہ گوار پا تھا..."
-Geo News — live — 1.5× realtime, video preview blocked by channel
 Dunya News — live, video preview working (real broadcast visible)
 Samaa TV — live, video preview working
 ```

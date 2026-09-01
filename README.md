@@ -45,14 +45,24 @@ python scripts/download_models.py small-int8
 # 5. (Optional) start Postgres so finalized captions get saved for fine-tuning
 docker compose up -d
 
-# 6. Start the live transcription server (CPU by default, no GPU needed)
-python webapp/server.py
-# STT_MODEL=models/whisper-large-v3-int8-ov python webapp/server.py   # if you downloaded large-v3-int8 instead
+# 6. Start the live transcription server
+
+# Option A: Small Model (Recommended — Ultra-Fast, Real-Time with Zero Delay)
+# PowerShell (Windows):
+$env:STT_MODEL="models/whisper-small-int8-ov"; $env:STT_WORKER_THREADS="1"; .venv\Scripts\python webapp/server.py
+# Bash (Linux/macOS):
+STT_MODEL=models/whisper-small-int8-ov STT_WORKER_THREADS=1 python webapp/server.py
+
+# Option B: Large-v3 Model (High Accuracy, Higher Compute)
+# PowerShell (Windows):
+$env:STT_MODEL="models/whisper-large-v3-int8-ov"; $env:STT_WORKER_THREADS="1"; .venv\Scripts\python webapp/server.py
+# Bash (Linux/macOS):
+STT_MODEL=models/whisper-large-v3-int8-ov STT_WORKER_THREADS=1 python webapp/server.py
 ```
 
 Leave that running, then open **http://127.0.0.1:8000** in your browser:
 
-1. Click one of the **Quick add** buttons (Geo News, ARY News, Dunya News,
+1. Click one of the **Quick add** buttons (Dunya News,
    Samaa TV, Express News, 92 News HD, BOL News, Aaj News) — it starts
    transcribing that live channel immediately, or
 2. Paste any YouTube/live URL into the **Channel name** + **YouTube / live
@@ -68,10 +78,16 @@ terminal stops the server; channels don't need to be stopped first.
 Skip steps 1–5 above if you've already created the venv, installed
 dependencies, and downloaded a model at least once:
 
+```powershell
+# Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+$env:STT_MODEL="models/whisper-small-int8-ov"; $env:STT_WORKER_THREADS="1"; python webapp/server.py
+```
+
 ```bash
-source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
-docker compose up -d               # only if you're using Postgres persistence and it's not already running
-python webapp/server.py
+# Linux / macOS:
+source .venv/bin/activate
+STT_MODEL=models/whisper-small-int8-ov STT_WORKER_THREADS=1 python webapp/server.py
 ```
 
 Then open **http://127.0.0.1:8000** — same three options as above (Quick
@@ -167,9 +183,12 @@ close to meaningless without it.
 
 ## 6. Live multi-channel dashboard
 
-```bash
-docker compose up -d   # Postgres, for persisting the corpus (optional)
-python webapp/server.py
+```powershell
+# Small Model (Recommended for real-time live streaming with zero delay):
+$env:STT_MODEL="models/whisper-small-int8-ov"; $env:STT_WORKER_THREADS="1"; .venv\Scripts\python webapp/server.py
+
+# Large-v3 Model (For maximum accuracy):
+$env:STT_MODEL="models/whisper-large-v3-int8-ov"; $env:STT_WORKER_THREADS="1"; .venv\Scripts\python webapp/server.py
 ```
 
 Open `http://127.0.0.1:8000`:
@@ -180,7 +199,7 @@ Open `http://127.0.0.1:8000`:
   immediately and keeps running even if you close the tab — reopen the
   dashboard and it's still there.
 - **Quick add**: one-click buttons for eight major Pakistani news channels
-  (Geo News, ARY News, Dunya News, Samaa TV, Express News, 92 News HD, BOL
+  (Dunya News, Samaa TV, Express News, 92 News HD, BOL
   News, Aaj News) — handles verified via live YouTube search, not guessed.
   These default to `language: ur` (not `auto`) — see the language note
   below for why. The button greys out with a ✓ once that channel is active
