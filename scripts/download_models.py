@@ -7,7 +7,6 @@ Usage:
 import sys
 from pathlib import Path
 
-import os
 import certifi
 import httpx
 from huggingface_hub.utils import set_client_factory, set_async_client_factory

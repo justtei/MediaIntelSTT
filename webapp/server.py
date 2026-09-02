@@ -16,6 +16,12 @@ growing corpus for future fine-tuning.
   2. Mic channels — WS {"type":"channel_start","source":"mic"} then binary
      PCM frames from that same connection. Tied to the owning connection
      (only that browser can supply mic audio) and stopped when it disconnects.
+  3. Simulate mode — WS {"type":"simulate_start","language":"ur"|"en"}. Replays
+     one of the two bundled audio/ demo clips through a dedicated, lazily-loaded
+     backend instance (independent of whatever model the live pool above is
+     configured with — default small-int8, override via STT_SIMULATE_MODEL;
+     see SIMULATE_MODEL_DIR), while the browser plays the same clip locally
+     via GET /audio/{ur,en} so the user hears it alongside the captions.
 
 Backend/device/model, concurrency, and every tuning knob are environment-
 configurable — see the STT_* variables below. GPU (Intel iGPU via OpenVINO)
@@ -33,7 +39,7 @@ Key env vars (all optional, sane defaults for local CPU-only dev):
                              faster-whisper: cpu/cuda/auto (default cpu)
   STT_MODEL                 openvino: model dir (default small-int8 — see note below) ;
                              faster-whisper: size name or CT2 dir (default small)
-  STT_WORKER_THREADS        concurrent transcriptions across all channels (default 2).
+  STT_WORKER_THREADS        concurrent transcriptions across all channels (default 1).
                              Each thread loads its OWN backend instance (pipelines
                              aren't assumed thread-safe for concurrent generate() calls)
                              — RAM cost is N x model size.
@@ -46,6 +52,12 @@ Key env vars (all optional, sane defaults for local CPU-only dev):
   STT_MAX_SEG_S / STT_MIN_SEG_S / STT_SIL_WIN_S / STT_SIL_RMS / STT_SKIP_RMS /
   STT_PARTIAL_MIN_S / STT_PARTIAL_GAP_S   Segmenter tuning (defaults tuned for slow
                                           CPU inference — retune once running on GPU/CUDA)
+  STT_STREAM_STALL_TIMEOUT_S  max seconds of silence from a live stream before it's
+                              treated as stalled and reconnected (default 20)
+  STT_STREAM_MAX_RESTARTS     consecutive stall-reconnect attempts before a channel
+                              gives up and reports an error (default 0 = unlimited)
+  STT_SIMULATE_MODEL         OpenVINO model dir for "simulate" mode (default small-int8,
+                              independent of STT_MODEL — see module docstring above)
 
 Security note: the stream URL allow-list and the optional WS token both exist
 for the moment this stops being localhost-only. Binding STT_HOST to 0.0.0.0/
@@ -65,6 +77,7 @@ large-v3-int8's quality, GPU/CUDA is what makes that realistic; CPU is for
 development, evaluation, and modest channel counts with a fast model.
 """
 import asyncio
+import functools
 import hmac
 import json
 import logging
@@ -98,7 +111,7 @@ if str(PROJECT / "scripts") not in sys.path:
     sys.path.insert(0, str(PROJECT / "scripts"))
 
 from scripts import db  # noqa: E402
-from scripts.audio_io import find_ffmpeg  # noqa: E402
+from scripts.audio_io import find_ffmpeg, load_audio  # noqa: E402
 from scripts.backends import Backend, BackendLoadError, load_backend  # noqa: E402
 from scripts.url_safety import DEFAULT_ALLOWED_HOSTS, validate_stream_url  # noqa: E402
 
@@ -168,8 +181,14 @@ ALLOWED_STREAM_HOSTS = (
 )
 
 SR = 16000
-MIN_SEG_S = _env_float("STT_MIN_SEG_S", 1.5)      # don't transcribe fragments shorter than this on silence
-MAX_SEG_S = _env_float("STT_MAX_SEG_S", 3.5)       # hard flush — bounds latency
+MIN_SEG_S = _env_float("STT_MIN_SEG_S", 3.0)      # don't transcribe fragments shorter than this on silence
+MAX_SEG_S = _env_float("STT_MAX_SEG_S", 6.0)       # hard flush — bounds latency
+# MIN/MAX_SEG_S raised from 1.5/3.5s: A/B testing showed short segments were
+# measurably hurting accuracy (Whisper does noticeably better with more
+# acoustic context per decode, and it's not even a latency tradeoff here —
+# longer segments ran at a *higher* realtime factor, since fixed per-call
+# overhead gets amortized over more audio). Retune down for very fast
+# CPUs/GPUs where lower per-caption latency matters more than this margin.
 SIL_WIN_S = _env_float("STT_SIL_WIN_S", 0.35)      # trailing window checked for silence
 SIL_RMS = _env_float("STT_SIL_RMS", 0.010)
 SKIP_RMS = _env_float("STT_SKIP_RMS", 0.004)       # whole-segment RMS below this = no speech, drop it
@@ -213,6 +232,110 @@ def _transcribe(samples: np.ndarray, language: str, initial_prompt: Optional[str
         return text, time.perf_counter() - t0
     finally:
         _backend_pool.put(b)
+
+
+# --- "simulate" mode: replay a bundled demo clip through a dedicated backend
+# instance, independent of whatever model/config the live dashboard is
+# running — so this always behaves the same way regardless of STT_MODEL,
+# rather than silently changing behavior depending on how the operator
+# started the server. It gets its own single-thread executor so a simulate
+# run can never block real channels, and vice versa. Loaded lazily on first
+# use. Defaults to small-int8 (same fast model the live dashboard defaults
+# to, so captions track the audio closely); override with STT_SIMULATE_MODEL
+# if you want to demo a different model's accuracy/speed tradeoff instead —
+# large-v3 is markedly more accurate but measured well below realtime for
+# short segments on CPU (see the Latency note above), so captions will
+# visibly fall behind the audio with that one.
+SIMULATE_AUDIO = {
+    "ur": PROJECT / "audio" / "news_test.wav",
+    "en": PROJECT / "audio" / "english_test.wav",
+}
+SIMULATE_MODEL_DIR = Path(os.environ.get("STT_SIMULATE_MODEL")
+                           or (PROJECT / "models" / "whisper-small-int8-ov"))
+SIMULATE_CHUNK_S = 6.0  # matches the live MAX_SEG_S tuning: more context per decode
+
+_simulate_backend: Optional[Backend] = None
+_simulate_backend_lock = asyncio.Lock()
+_simulate_executor = ThreadPoolExecutor(max_workers=1)
+
+
+async def _get_simulate_backend() -> Backend:
+    global _simulate_backend
+    async with _simulate_backend_lock:
+        if _simulate_backend is None:
+            if not SIMULATE_MODEL_DIR.is_dir():
+                raise BackendLoadError(
+                    f"{SIMULATE_MODEL_DIR} not found — run "
+                    f"'python scripts/download_models.py small-int8' to fetch it first")
+            loop = asyncio.get_running_loop()
+            log.info("loading dedicated backend for simulate mode (%s, one-time) ...", SIMULATE_MODEL_DIR.name)
+            _simulate_backend = await loop.run_in_executor(
+                _simulate_executor,
+                functools.partial(load_backend, "openvino", model_dir=str(SIMULATE_MODEL_DIR), device="CPU"),
+            )
+        return _simulate_backend
+
+
+async def _run_simulate(lang: str, send):
+    """Read a bundled demo clip in full, then replay it through the
+    dedicated simulate backend in the same chunk size the live dashboard
+    uses, pacing each step to roughly track real playback speed (the
+    browser plays the same file locally, independently) — so this looks
+    and feels like a live channel, just sourced from a file instead of a
+    stream or mic."""
+    path = SIMULATE_AUDIO.get(lang)
+    if not path or not path.exists():
+        await send({"type": "stream_status", "state": "error",
+                     "detail": f"no bundled demo audio for language {lang!r}"})
+        return
+    loop = asyncio.get_running_loop()
+    try:
+        samples = await loop.run_in_executor(None, load_audio, str(path))
+    except SystemExit as e:  # load_audio calls sys.exit() on failure
+        await send({"type": "stream_status", "state": "error", "detail": str(e)})
+        return
+
+    try:
+        backend = await _get_simulate_backend()
+    except Exception as e:
+        log.exception("failed to load simulate backend")
+        await send({"type": "stream_status", "state": "error", "detail": str(e)})
+        return
+
+    await send({"type": "stream_status", "state": "started"})
+    chunk_n = int(SIMULATE_CHUNK_S * SR)
+    clock = 0.0
+    pos = 0
+    total = len(samples)
+    try:
+        while pos < total:
+            chunk = samples[pos:pos + chunk_n]
+            pos += chunk_n
+            seg_dur = len(chunk) / SR
+            t_start = clock
+            clock += seg_dur
+
+            if float(np.sqrt(np.mean(chunk ** 2))) < SKIP_RMS:
+                await asyncio.sleep(min(seg_dur, 1.0))
+                continue
+
+            t0 = time.perf_counter()
+            text, _chunks = await loop.run_in_executor(
+                _simulate_executor, backend.transcribe, chunk, lang, None, False, False)
+            dt = time.perf_counter() - t0
+            if text:
+                await send({
+                    "type": "segment", "text": text, "t0": round(t_start, 1), "t1": round(clock, 1),
+                    "infer_s": round(dt, 2), "rtf": round(seg_dur / dt, 2) if dt > 0 else None,
+                    "lang": lang, "reason": "max", "source": "simulate",
+                })
+            await asyncio.sleep(max(0.0, seg_dur - dt))  # track real playback speed when we can keep up
+        await send({"type": "stream_status", "state": "ended"})
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        log.exception("simulate run failed")
+        await send({"type": "stream_status", "state": "error", "detail": str(e)})
 
 
 ACTIVE_DEVICE: Optional[str] = None  # set once the pool is loaded, for /health
@@ -371,6 +494,14 @@ def _deno_path() -> Optional[str]:
 
 
 STREAM_RESOLVE_TIMEOUT_S = _env_float("STT_STREAM_RESOLVE_TIMEOUT_S", 30.0)
+STREAM_STALL_TIMEOUT_S = _env_float("STT_STREAM_STALL_TIMEOUT_S", 20.0)
+# 0 = retry forever (capped backoff below keeps this cheap). Real usage shows
+# a channel can legitimately stall and recover several times in a row under
+# ordinary CPU/network contention from running multiple channels at once —
+# giving up after a handful of attempts just forces a manual re-add on what's
+# meant to be an unattended 24/7 dashboard. Set STT_STREAM_MAX_RESTARTS to a
+# positive number to bound it instead.
+STREAM_MAX_RESTARTS = int(os.environ.get("STT_STREAM_MAX_RESTARTS", "0"))
 
 
 @dataclass
@@ -419,6 +550,13 @@ class StreamPuller:
 
     The channel URL is validated against an allow-list (scripts/url_safety.py)
     before any subprocess is spawned — see issue #11 in requirements.md.
+
+    A resolved live-stream media URL can silently stall mid-stream (YouTube
+    CDN behavior, not something this project controls — the direct URL isn't
+    guaranteed to keep delivering data indefinitely). Every read after the
+    first is bounded by STREAM_STALL_TIMEOUT_S; a stall triggers an automatic
+    re-resolve + reconnect (bounded by STREAM_MAX_RESTARTS) instead of
+    leaving the channel silently dead with no error ever surfaced.
     """
 
     def __init__(self, url: str, segmenter: Segmenter, send):
@@ -428,49 +566,94 @@ class StreamPuller:
         self.procs = []
         self.task = None
         self._stopped = False  # guards against spawning ffmpeg after stop() raced a slow resolve
+        self._last_stderr_line = ""
 
     async def start(self):
+        self.task = asyncio.ensure_future(self._run())
+
+    async def _run(self):
         rejection = validate_stream_url(self.url, ALLOWED_STREAM_HOSTS, ALLOW_ANY_STREAM_HOST)
         if rejection:
             log.warning("rejected stream URL %r: %s", self.url, rejection)
             await self.send({"type": "stream_status", "state": "error", "detail": rejection})
             return
 
+        attempt = 0
+        while True:
+            loop = asyncio.get_running_loop()
+            try:
+                resolved = await loop.run_in_executor(None, _resolve_media_url, self.url)
+            except subprocess.TimeoutExpired:
+                await self.send({"type": "stream_status", "state": "error",
+                                  "detail": f"yt-dlp did not resolve a playable URL within "
+                                            f"{STREAM_RESOLVE_TIMEOUT_S:.0f}s"})
+                return
+            except Exception as e:
+                await self.send({"type": "stream_status", "state": "error", "detail": str(e)})
+                return
+
+            if self._stopped:  # channel was stopped while the (unbounded-by-us) resolve was in flight
+                return
+
+            ffmpeg_cmd = [
+                find_ffmpeg(),
+                "-v", "error",
+                "-re",
+                "-i", resolved.media_url,
+                "-ac", "1",
+                "-ar", str(SR),
+                "-f", "f32le",
+                "pipe:1",
+            ]
+            ffmpeg = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if self._stopped:  # stop() raced us between resolve and spawn
+                ffmpeg.kill()
+                return
+            self.procs = [ffmpeg]
+            self._last_stderr_line = ""
+            stderr_task = asyncio.ensure_future(self._drain_stderr(ffmpeg))
+            await self.send({"type": "stream_status", "state": "started", "url": self.url,
+                              "video_id": resolved.video_id, "title": resolved.title})
+
+            stalled = await self._pump(ffmpeg)
+            stderr_task.cancel()
+
+            if self._stopped or not stalled:
+                return
+
+            attempt += 1
+            if STREAM_MAX_RESTARTS and attempt > STREAM_MAX_RESTARTS:
+                await self.send({"type": "stream_status", "state": "error",
+                                  "detail": f"stream stalled repeatedly ({attempt} attempts), giving up"})
+                return
+            budget = str(STREAM_MAX_RESTARTS) if STREAM_MAX_RESTARTS else "unlimited"
+            log.warning("stream %r stalled (no data for %.0fs), reconnecting (attempt %d/%s)",
+                        self.url, STREAM_STALL_TIMEOUT_S, attempt, budget)
+            await asyncio.sleep(min(2 * attempt, 10))
+
+    async def _drain_stderr(self, ffmpeg):
+        """Continuously consume ffmpeg's stderr for the life of the process.
+        Without this, a chatty ffmpeg can fill the OS pipe buffer and block on
+        the write — which silently stalls stdout (and this whole channel) too,
+        since it's the same single-threaded process. Also keeps the last line
+        around so a real failure has a human-readable reason attached."""
         loop = asyncio.get_running_loop()
         try:
-            resolved = await loop.run_in_executor(None, _resolve_media_url, self.url)
-        except subprocess.TimeoutExpired:
-            await self.send({"type": "stream_status", "state": "error",
-                              "detail": f"yt-dlp did not resolve a playable URL within "
-                                        f"{STREAM_RESOLVE_TIMEOUT_S:.0f}s"})
-            return
-        except Exception as e:
-            await self.send({"type": "stream_status", "state": "error", "detail": str(e)})
-            return
+            while True:
+                line = await loop.run_in_executor(None, ffmpeg.stderr.readline)
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if text:
+                    self._last_stderr_line = text
+                    log.debug("ffmpeg stderr (%s): %s", self.url, text)
+        except Exception:
+            pass
 
-        if self._stopped:  # channel was stopped while the (unbounded-by-us) resolve was in flight
-            return
-
-        ffmpeg_cmd = [
-            find_ffmpeg(),
-            "-v", "error",
-            "-re",
-            "-i", resolved.media_url,
-            "-ac", "1",
-            "-ar", str(SR),
-            "-f", "f32le",
-            "pipe:1",
-        ]
-        ffmpeg = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if self._stopped:  # stop() raced us between resolve and spawn
-            ffmpeg.kill()
-            return
-        self.procs = [ffmpeg]
-        self.task = asyncio.ensure_future(self._pump(ffmpeg))
-        await self.send({"type": "stream_status", "state": "started", "url": self.url,
-                          "video_id": resolved.video_id, "title": resolved.title})
-
-    async def _pump(self, ffmpeg):
+    async def _pump(self, ffmpeg) -> bool:
+        """Read PCM from ffmpeg until it stops. Returns True if the stream
+        stalled and the caller should reconnect, False for a clean end/error
+        (a terminal stream_status has already been sent in that case)."""
         loop = asyncio.get_running_loop()
         chunk_bytes = int(SR * 0.25) * 4  # 0.25 s per read for low latency
         got_data = False
@@ -483,34 +666,35 @@ class StreamPuller:
                 await self.send({"type": "stream_status", "state": "error",
                                   "detail": f"no audio within {STREAM_FIRST_DATA_TIMEOUT_S:.0f}s "
                                             "— is the URL live/reachable?"})
-                return
+                return False
             if first:
                 got_data = True
                 await self.seg.feed(np.frombuffer(first, dtype=np.float32))
             while True:
-                data = await loop.run_in_executor(None, ffmpeg.stdout.read, chunk_bytes)
+                try:
+                    data = await asyncio.wait_for(
+                        loop.run_in_executor(None, ffmpeg.stdout.read, chunk_bytes),
+                        timeout=STREAM_STALL_TIMEOUT_S)
+                except asyncio.TimeoutError:
+                    if ffmpeg.poll() is None:
+                        ffmpeg.kill()
+                    return True  # stalled mid-stream — _run() decides whether to reconnect
                 if not data:
                     break
                 got_data = True
                 await self.seg.feed(np.frombuffer(data, dtype=np.float32))
             await self.seg.flush("stream-end")
-            detail = ""
-            if not got_data:
-                detail = "no audio received from ffmpeg"
-                try:  # process is dead by now; pull ffmpeg's real complaint
-                    err = self.procs[0].stderr.read().decode("utf-8", errors="replace").strip()
-                    if err:
-                        detail = err.splitlines()[-1]
-                except Exception:
-                    pass
+            detail = "" if got_data else (self._last_stderr_line or "no audio received from ffmpeg")
             await self.send({"type": "stream_status",
                              "state": "ended" if got_data else "error",
                              "detail": detail})
+            return False
         except asyncio.CancelledError:
             raise
         except Exception as e:  # surfaced to the page instead of dying silently
             log.exception("stream pump failed")
             await self.send({"type": "stream_status", "state": "error", "detail": str(e)})
+            return False
 
     def stop(self):
         self._stopped = True
@@ -532,13 +716,14 @@ class StreamPuller:
 class Channel:
     id: str
     name: str
-    source_type: str  # "youtube" | "mic"
+    source_type: str  # "youtube" | "mic" | "simulate"
     url: Optional[str]
     language: str
     initial_prompt: Optional[str]
     segmenter: Segmenter
     status: str = "starting"
     puller: Optional[StreamPuller] = None
+    task: Optional[asyncio.Task] = None  # the running coroutine for "simulate" channels
     owner_ws: Optional[WebSocket] = None
     created_at: float = field(default_factory=time.time)
     video_id: Optional[str] = None  # resolved YouTube video id, for the frontend's embedded player
@@ -591,7 +776,11 @@ def _channel_send(channel_id: str):
             if event.get("video_id") and not channel.video_id:
                 channel.video_id = event["video_id"]
 
-        if event.get("type") == "segment" and db.is_connected():
+        # "simulate" segments replay a bundled demo clip through a dedicated
+        # backend instance, not the configured live pool — don't let repeated
+        # demo runs pollute the corpus with duplicate rows tagged with the
+        # wrong backend/device.
+        if event.get("type") == "segment" and event.get("source") != "simulate" and db.is_connected():
             try:
                 await db.insert_segment(
                     channel_id, text=event["text"], language=event.get("lang") or "",
@@ -608,8 +797,8 @@ def _channel_send(channel_id: str):
 async def start_channel(name: str, source_type: str, url: Optional[str], language: str,
                          initial_prompt: Optional[str] = None,
                          owner_ws: Optional[WebSocket] = None) -> Channel:
-    if source_type not in ("youtube", "mic"):
-        raise ValueError(f"unknown source: {source_type!r} (expected 'youtube' or 'mic')")
+    if source_type not in ("youtube", "mic", "simulate"):
+        raise ValueError(f"unknown source: {source_type!r} (expected 'youtube', 'mic', or 'simulate')")
     name = (name or "").strip()[:MAX_CHANNEL_NAME_CHARS] or ("Mic" if source_type == "mic" else "Channel")
     if source_type == "youtube":
         rejection = validate_stream_url(url or "", ALLOWED_STREAM_HOSTS, ALLOW_ANY_STREAM_HOST)
@@ -618,8 +807,11 @@ async def start_channel(name: str, source_type: str, url: Optional[str], languag
     if initial_prompt and len(initial_prompt) > MAX_INITIAL_PROMPT_CHARS:
         initial_prompt = initial_prompt[:MAX_INITIAL_PROMPT_CHARS]
 
+    # "simulate" channels aren't real broadcast/mic data (the same two bundled
+    # clips get replayed every run) — the channels table's source_type check
+    # constraint doesn't even allow this value, so skip DB tracking entirely.
     channel_id = await db.create_channel(name, source_type, url, language) \
-        if db.is_connected() else str(uuid.uuid4())
+        if db.is_connected() and source_type != "simulate" else str(uuid.uuid4())
 
     send = _channel_send(channel_id)
 
@@ -653,6 +845,8 @@ async def start_channel(name: str, source_type: str, url: Optional[str], languag
         puller = StreamPuller(url, segmenter, send)
         channel.puller = puller
         asyncio.ensure_future(puller.start())  # status updates arrive via stream_status broadcasts
+    elif source_type == "simulate":
+        channel.task = asyncio.ensure_future(_run_simulate(language, send))
 
     return channel
 
@@ -663,9 +857,11 @@ async def stop_channel(channel_id: str, reason: str = "stopped"):
         return
     if channel.puller:
         channel.puller.stop()
+    if channel.task and not channel.task.done():
+        channel.task.cancel()
     channel.segmenter.close()
     channel.status = "stopped"
-    if db.is_connected():
+    if db.is_connected() and channel.source_type != "simulate":
         try:
             await db.set_channel_status(channel_id, "stopped")
         except Exception:
@@ -701,6 +897,17 @@ def health():
         "database": "connected" if db.is_connected() else "disconnected",
     }
     return JSONResponse(body, status_code=200 if ready else 503)
+
+
+@app.get("/audio/{key}")
+def demo_audio(key: str):
+    """Serves the two bundled demo clips for local browser playback during a
+    'simulate' run. `key` is checked against a fixed, small dict — not a raw
+    filesystem path — so this can't be used to read arbitrary files."""
+    path = SIMULATE_AUDIO.get(key)
+    if not path or not path.exists():
+        raise HTTPException(404, f"no demo audio for {key!r} (expected 'ur' or 'en')")
+    return FileResponse(path, media_type="audio/wav")
 
 
 @app.get("/channels")
@@ -743,6 +950,7 @@ async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     SUBSCRIBERS.add(ws)
     mic_channel_id: Optional[str] = None
+    sim_channel_id: Optional[str] = None
 
     async def send(obj):
         try:
@@ -794,12 +1002,32 @@ async def ws_endpoint(ws: WebSocket):
                     else:
                         await send({"type": "error", "detail": f"unknown source {source!r}"})
 
+                elif kind == "simulate_start":
+                    lang = data.get("language")
+                    if lang not in SIMULATE_AUDIO:
+                        await send({"type": "error",
+                                    "detail": f"simulate language must be one of {sorted(SIMULATE_AUDIO)}"})
+                        continue
+                    if sim_channel_id:
+                        await stop_channel(sim_channel_id, reason="replaced")
+                        sim_channel_id = None
+                    name = f"Simulate ({'Urdu' if lang == 'ur' else 'English'}, {SIMULATE_MODEL_DIR.name})"
+                    try:
+                        channel = await start_channel(name, "simulate", None, lang, owner_ws=ws)
+                    except ValueError as e:
+                        await send({"type": "error", "detail": str(e)})
+                        continue
+                    sim_channel_id = channel.id
+                    await send({"type": "simulate_channel_ready", "channel_id": channel.id})
+
                 elif kind == "channel_stop":
                     cid = data.get("channel_id")
                     if cid:
                         await stop_channel(cid, reason="stopped_by_user")
                         if cid == mic_channel_id:
                             mic_channel_id = None
+                        if cid == sim_channel_id:
+                            sim_channel_id = None
 
                 elif kind == "config":
                     channel = CHANNELS.get(data.get("channel_id"))
@@ -833,6 +1061,8 @@ async def ws_endpoint(ws: WebSocket):
         SUBSCRIBERS.discard(ws)
         if mic_channel_id:
             await stop_channel(mic_channel_id, reason="disconnected")
+        if sim_channel_id:
+            await stop_channel(sim_channel_id, reason="disconnected")
 
 
 if __name__ == "__main__":
