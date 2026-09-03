@@ -328,7 +328,7 @@ python -m pytest tests/ -v
 
 Covers the pure-logic modules (`urdu_norm`, `script_audit`, `wer_eval`,
 `backends`, `url_safety`, `webvtt`) — no GPU, model download, or audio file
-needed. Runs in CI on every push (`.github/workflows/ci.yml`, lint + pytest).
+needed. No CI pipeline is wired up yet — run this manually before pushing.
 
 See `PRODUCTION_READINESS.md` for what's hardened vs. what's still blocked
 on real hardware/data.

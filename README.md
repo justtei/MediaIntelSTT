@@ -29,7 +29,6 @@ ngmi-ai-services/
 ├── ngmi-stt-backend/               speech-to-text service
 ├── ngmi-ocr-backend/               Urdu OCR service
 ├── ngmi-face-recognation-backend/  face recognition service
-├── .github/workflows/ci.yml        CI (lint + pytest)
 └── .gitignore                      shared ignore rules (.venv/, models/,
                                      tools/, per-service uploads/gallery data)
 ```
