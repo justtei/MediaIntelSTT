@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NGMI Face Recognition - Multi-Channel Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0d;
+      --bg-panel: #131317;
+      --bg-panel-2: #18181d;
+      --bg-input: #0e0e12;
+      --border: #26262d;
+      --border-hover: #34343d;
+      --text: #f2f2f4;
+      --text-secondary: #9c9ca6;
+      --text-tertiary: #68686f;
+      --accent: #4f8cff;
+      --accent-soft: rgba(79, 140, 255, .12);
+      --accent-border: rgba(79, 140, 255, .38);
+      --ok: #22c55e;
+      --ok-soft: rgba(34, 197, 94, .12);
+      --warn: #f59e0b;
+      --warn-soft: rgba(245, 158, 11, .12);
+      --err: #f87171;
+      --err-soft: rgba(248, 113, 113, .12);
+      --radius-sm: 6px;
+      --radius: 10px;
+      --radius-lg: 14px;
+      --sans: "Inter", system-ui, -apple-system, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    svg {
+      display: block;
+      flex-shrink: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-family: var(--sans);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 20px 48px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrap {
+      width: 100%;
+      max-width: 1320px;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 24px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      background: var(--accent);
+      color: #05070f;
+      border-radius: 9px;
+    }
+
+    h1 {
+      font-size: 19px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+    }
+
+    h1 small {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 400;
+      color: var(--text-tertiary);
+      margin-top: 1px;
+    }
+
+    .system-stats {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .stat-chip {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 5px 11px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-family: var(--mono);
+      white-space: nowrap;
+    }
+
+    .stat-chip::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--text-tertiary);
+      flex-shrink: 0;
+    }
+
+    .stat-chip.ok::before {
+      background: var(--ok);
+    }
+
+    .stat-chip.err::before {
+      background: var(--err);
+    }
+
+    .control-panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      margin-bottom: 22px;
+      overflow: hidden;
+    }
+
+    .tabs {
+      display: flex;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-panel-2);
+    }
+
+    .tab {
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: 13px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-tertiary);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+
+    .tab svg {
+      opacity: .75;
+    }
+
+    .tab:hover:not(.active) {
+      color: var(--text-secondary);
+      background: #1e1e25;
+    }
+
+    .tab.active {
+      color: var(--text);
+      background: var(--bg-panel);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab.active svg {
+      opacity: 1;
+      color: var(--accent);
+    }
+
+    .tab-panel {
+      display: none;
+      padding: 18px 20px 20px;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .tab-desc {
+      font-size: 12.5px;
+      color: var(--text-tertiary);
+      margin-bottom: 12px;
+    }
+
+    .tab-status {
+      color: var(--text-tertiary);
+      font-size: 12.5px;
+    }
+
+    .bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    button,
+    select,
+    input {
+      background: var(--bg-panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 9px 14px;
+      font-size: 13.5px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+    }
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      min-width: 180px;
+      background: var(--bg-input);
+      cursor: text;
+    }
+
+    input[type="text"]::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    button:hover:not(:disabled) {
+      border-color: var(--border-hover);
+      background: #1e1e25;
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #05070f;
+      font-weight: 600;
+    }
+
+    button.primary:hover:not(:disabled) {
+      background: #6d9fff;
+      border-color: #6d9fff;
+    }
+
+    button:disabled {
+      opacity: .4;
+      cursor: default;
+    }
+
+    .channels-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 18px;
+      margin-top: 6px;
+    }
+
+    .empty-state {
+      color: var(--text-secondary);
+      text-align: center;
+      padding: 56px 20px;
+      grid-column: 1 / -1;
+      background: var(--bg-panel);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-lg);
+    }
+
+    .empty-state h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .empty-state p {
+      font-size: 13px;
+    }
+
+    .card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      transition: border-color .2s ease, transform .15s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-hover);
+    }
+
+    .card.active-stream {
+      border-color: var(--accent-border);
+    }
+
+    .card.active-stream:hover {
+      border-color: var(--accent-border);
+    }
+
+    .card .videoTop {
+      position: absolute;
+      inset: 0 0 auto 0;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 10px 24px;
+      background: linear-gradient(to bottom, rgba(5, 5, 8, .78) 0%, rgba(5, 5, 8, .4) 55%, transparent 100%);
+    }
+
+    .card .videoTop .src {
+      color: rgba(255, 255, 255, .75);
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .card .videoTop .name {
+      font-weight: 600;
+      font-size: 13.5px;
+      color: #fff;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+    }
+
+    .card .videoTop .stopBtn {
+      padding: 5px;
+      background: rgba(255, 255, 255, .08);
+      border-color: rgba(255, 255, 255, .16);
+      color: rgba(255, 255, 255, .8);
+      flex-shrink: 0;
+    }
+
+    .card .videoTop .stopBtn:hover:not(:disabled) {
+      color: #fff;
+      background: var(--err);
+      border-color: var(--err);
+    }
+
+    .pill {
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      white-space: nowrap;
+      border: 1px solid;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .pill.live {
+      color: var(--ok);
+      border-color: rgba(34, 197, 94, .35);
+      background: var(--ok-soft);
+    }
+
+    .pill.live::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      background: var(--ok);
+      border-radius: 50%;
+      animation: pulse 1.6s infinite;
+    }
+
+    .pill.starting {
+      color: var(--warn);
+      border-color: rgba(245, 158, 11, .35);
+      background: var(--warn-soft);
+    }
+
+    .pill.error {
+      color: var(--err);
+      border-color: rgba(248, 113, 113, .35);
+      background: var(--err-soft);
+    }
+
+    .pill.stopped {
+      color: var(--text-tertiary);
+      border-color: var(--border);
+      background: var(--bg-panel-2);
+    }
+
+    .videoTop .pill {
+      background: rgba(8, 8, 11, .65);
+      backdrop-filter: blur(3px);
+      flex-shrink: 0;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: .35;
+        transform: scale(1.25);
+      }
+    }
+
+    .card .videoWrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 12px;
+      flex: 0 0 auto;
+      border: 1px solid var(--border);
+    }
+
+    .card .videoWrap .ytTarget,
+    .card .videoWrap iframe,
+    .card .videoWrap video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    .card .videoWrap canvas.faceOverlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .faces-seen {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+      min-height: 26px;
+    }
+
+    .face-chip {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg-panel-2);
+      color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .face-chip.known {
+      color: var(--ok);
+      border-color: rgba(34, 197, 94, .35);
+      background: var(--ok-soft);
+      font-weight: 600;
+    }
+
+    .face-chip.unknown {
+      color: var(--text-tertiary);
+    }
+
+    .card .placeholder-msg {
+      color: var(--text-tertiary);
+      font-size: 13px;
+      text-align: center;
+      margin-top: auto;
+      margin-bottom: auto;
+    }
+
+    .card .footer-info {
+      font-size: 10.5px;
+      color: var(--text-tertiary);
+      margin-top: auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .imgResultWrap {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #000;
+    }
+
+    .imgResultWrap img {
+      display: block;
+      max-width: 100%;
+      max-height: 460px;
+    }
+
+    .imgResultWrap canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo-title">
+        <div class="logo-badge">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 3a2 2 0 0 1 2 2v2M22 8V6a2 2 0 0 0-2-2h-2M2 8V6a2 2 0 0 1 2-2h2M7 22H5a2 2 0 0 1-2-2v-2" />
+            <path d="M17 21a2 2 0 0 0 2-2v-2" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </div>
+        <h1>Face Recognition<small>Live channels &amp; uploaded video</small></h1>
+      </div>
+      <div class="system-stats">
+        <span id="statGallery" class="stat-chip">Loading gallery…</span>
+        <span id="statChannels" class="stat-chip">0 channels</span>
+      </div>
+    </header>
+
+    <!-- Actions -->
+    <div class="control-panel">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="channel" role="tab">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9M19.1 4.9c3.9 3.9 3.9 10.2 0 14.1M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" />
+            <circle cx="12" cy="12" r="2.2" />
+          </svg>
+          <span>Live Channel</span>
+        </button>
+        <button class="tab" data-tab="upload" role="tab">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+          </svg>
+          <span>Upload Video</span>
+        </button>
+        <button class="tab" data-tab="person" role="tab">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M19 8v6M22 11h-6" />
+          </svg>
+          <span>Add Person</span>
+        </button>
+        <button class="tab" data-tab="recognize" role="tab">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <span>Recognize Image</span>
+        </button>
+      </div>
+
+      <div class="tab-panel active" data-panel="channel">
+        <div class="tab-desc">Add a live news channel or paste any YouTube video link — the model watches it continuously.</div>
+        <div class="bar">
+          <input id="chName" type="text" placeholder="Channel name" style="flex: 0 1 220px">
+          <input id="chUrl" type="text" placeholder="Paste a YouTube live / video URL">
+          <button id="addChannelBtn" class="primary">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span>Add Channel</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="upload">
+        <div class="tab-desc">Upload a local video file to run recognition over it, the same way as a live channel.</div>
+        <div class="bar">
+          <input id="uploadName" type="text" placeholder="Label" style="flex: 0 1 220px">
+          <input id="uploadFile" type="file" accept="video/*" style="flex: 1 1 220px;">
+          <button id="uploadBtn" class="primary" disabled>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+            </svg>
+            <span>Upload &amp; Recognize</span>
+          </button>
+        </div>
+        <span id="uploadStatus" class="tab-status"></span>
+      </div>
+
+      <div class="tab-panel" data-panel="person">
+        <div class="tab-desc">Enroll a new person — name them, then upload a few clear, varied photos of their face.</div>
+        <div class="bar">
+          <input id="personName" type="text" placeholder="Person's name" style="flex: 0 1 220px">
+          <input id="personFiles" type="file" accept="image/*" multiple style="flex: 1 1 220px;">
+          <button id="personBtn" class="primary" disabled>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M19 8v6M22 11h-6" />
+            </svg>
+            <span>Add Person</span>
+          </button>
+        </div>
+        <span id="personStatus" class="tab-status"></span>
+      </div>
+
+      <div class="tab-panel" data-panel="recognize">
+        <div class="tab-desc">Upload a single photo to identify everyone enrolled who appears in it.</div>
+        <div class="bar">
+          <input id="recognizeFile" type="file" accept="image/*" style="flex: 1 1 220px;">
+          <button id="recognizeBtn" class="primary" disabled>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            <span>Recognize</span>
+          </button>
+        </div>
+        <span id="recognizeStatus" class="tab-status" style="display: block; margin-top: 4px;"></span>
+        <div id="recognizeResult" style="display: none; margin-top: 14px;">
+          <div class="imgResultWrap">
+            <img id="recognizeImg">
+            <canvas id="recognizeCanvas"></canvas>
+          </div>
+          <div id="recognizeFacesList" class="faces-seen" style="margin-top: 10px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Channels grid -->
+    <div id="channels" class="channels-grid">
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6"
+          stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 12px;">
+          <rect x="2" y="5" width="14" height="14" rx="2.5" />
+          <path d="m22 8-6 4 6 4V8Z" />
+        </svg>
+        <h3>No active channels</h3>
+        <p>Add a YouTube live stream/video link above, or upload a video to begin recognition.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    let ws;
+    const channels = new Map();
+
+    const ICONS = {
+      close: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+      broadcast: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9M19.1 4.9c3.9 3.9 3.9 10.2 0 14.1M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><circle cx="12" cy="12" r="2.2"/></svg>',
+      upload: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>',
+    };
+
+    document.querySelectorAll(".tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b === btn));
+        const target = btn.dataset.tab;
+        document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.dataset.panel === target));
+      });
+    });
+
+    let ytApiReady = false;
+    let ytApiWaiters = [];
+    function loadYouTubeApi() {
+      if (window.YT && window.YT.Player) { ytApiReady = true; return; }
+      if (document.getElementById("ytApiScript")) return;
+      const tag = document.createElement("script");
+      tag.id = "ytApiScript";
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+      window.onYouTubeIframeAPIReady = () => {
+        ytApiReady = true;
+        ytApiWaiters.forEach(cb => cb());
+        ytApiWaiters = [];
+      };
+    }
+    function onYtReady(cb) { ytApiReady ? cb() : ytApiWaiters.push(cb); }
+
+    function createPlayerForChannel(channelId, videoId) {
+      const c = channels.get(channelId);
+      if (!c || c.ytPlayer || !videoId || !c.ytTargetEl) return;
+      loadYouTubeApi();
+      onYtReady(() => {
+        if (!channels.has(channelId)) return;
+        // Target the inner .ytTarget div, not .videoWrap itself — the YT
+        // IFrame API replaces whatever element it's given with its <iframe>,
+        // and .videoWrap needs to survive (position:relative box + the
+        // faceOverlay canvas sibling) for the box-overlay to keep working.
+        c.ytPlayer = new YT.Player(c.ytTargetEl, {
+          videoId,
+          playerVars: { autoplay: 1, mute: 1, playsinline: 1, modestbranding: 1 },
+        });
+      });
+    }
+
+    function prettyName(name) {
+      if (!name || name === "Unknown") return "Unknown";
+      return name.replace(/[-_]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    // Shared by the live per-channel overlay and the static image-recognition
+    // preview: draws bbox + name-label boxes onto `canvas`, scaling from the
+    // analyzed frame's own pixel coordinates (frameW/frameH) to whatever size
+    // the canvas is actually rendered at.
+    //
+    // The <video>/<img> being overlaid renders with its own aspect ratio
+    // preserved (letterboxed/pillarboxed) inside the CSS box rather than
+    // stretched to fill it — a portrait clip inside this app's 16:9 card
+    // gets black bars on the sides. The overlay has to reproduce that exact
+    // same "contain" fit (uniform scale + centering offset), or boxes land
+    // in the letterbox bars instead of on the actual visible video content.
+    function drawFaceBoxesOnCanvas(canvas, faces, frameW, frameH) {
+      if (!canvas) return;
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = canvas.clientWidth, cssH = canvas.clientHeight;
+      const w = Math.max(1, Math.round(cssW * dpr)), h = Math.max(1, Math.round(cssH * dpr));
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!faces || !faces.length || !frameW || !frameH) return;
+      const scale = Math.min(canvas.width / frameW, canvas.height / frameH);
+      const offsetX = (canvas.width - frameW * scale) / 2;
+      const offsetY = (canvas.height - frameH * scale) / 2;
+      ctx.lineWidth = Math.max(2, canvas.width / 400);
+      ctx.font = `${Math.max(12, Math.round(canvas.width / 55))}px Inter, sans-serif`;
+      ctx.textBaseline = "top";
+      for (const f of faces) {
+        const known = f.name !== "Unknown";
+        const [x, y, bw0, bh0] = f.bbox;
+        const bx = offsetX + x * scale, by = offsetY + y * scale, bw = bw0 * scale, bh = bh0 * scale;
+        const color = known ? "#22c55e" : "#f87171";
+        ctx.strokeStyle = color;
+        ctx.strokeRect(bx, by, bw, bh);
+        const label = known ? `${prettyName(f.name)} ${Math.round(f.confidence * 100)}%` : "Unknown";
+        const padX = 6, padY = 3;
+        const lh = parseInt(ctx.font, 10) + padY * 2;
+        const textW = ctx.measureText(label).width;
+        const ly = Math.max(0, by - lh);
+        ctx.fillStyle = color;
+        ctx.fillRect(bx, ly, textW + padX * 2, lh);
+        ctx.fillStyle = "#05070f";
+        ctx.fillText(label, bx + padX, ly + padY);
+      }
+    }
+
+    async function refreshHealth() {
+      try {
+        const h = await (await fetch("/health")).json();
+        const names = Object.keys(h.gallery || {});
+        $("statGallery").textContent = names.length
+          ? `${names.length} enrolled (${Object.values(h.gallery).reduce((a, b) => a + b, 0)} photos)`
+          : "Gallery loading…";
+        $("statGallery").classList.toggle("ok", names.length > 0);
+      } catch { }
+    }
+
+    function clearEmptyState() {
+      const e = document.querySelector("#channels .empty-state");
+      if (e) e.remove();
+    }
+
+    function updateChannelCount() {
+      $("statChannels").textContent = `${channels.size} channel${channels.size === 1 ? '' : 's'}`;
+    }
+
+    function addChannelCard(channel) {
+      if (channels.has(channel.id)) return;
+      clearEmptyState();
+      const el = document.createElement("div");
+      el.className = "card";
+      const isYoutube = channel.source_type === "youtube";
+      const srcIcon = isYoutube ? ICONS.broadcast : ICONS.upload;
+
+      el.innerHTML = `
+    <div class="videoWrap">
+      <div class="ytTarget"></div>
+      <canvas class="faceOverlay"></canvas>
+      <div class="videoTop">
+        <span class="src">${srcIcon}</span>
+        <span class="name" title="${channel.name}">${channel.name}</span>
+        <span class="pill ${channel.status || "starting"}">${channel.status === "starting" ? "Connecting…" : (channel.status || "starting")}</span>
+        <button class="stopBtn" title="Close channel">${ICONS.close}</button>
+      </div>
+    </div>
+    <div class="faces-seen"></div>
+    ${channel.url ? `<div class="footer-info" title="${channel.url}">${channel.url}</div>` : ""}
+  `;
+
+      el.querySelector(".stopBtn").onclick = () => requestStopChannel(channel.id);
+      $("channels").appendChild(el);
+
+      const entry = {
+        el,
+        statusEl: el.querySelector(".pill"),
+        facesEl: el.querySelector(".faces-seen"),
+        videoWrapEl: el.querySelector(".videoWrap"),
+        ytTargetEl: el.querySelector(".ytTarget"),
+        overlayEl: el.querySelector(".faceOverlay"),
+        ytPlayer: null, url: channel.url,
+      };
+      channels.set(channel.id, entry);
+
+      if (isYoutube && channel.video_id) {
+        createPlayerForChannel(channel.id, channel.video_id);
+      } else if (!isYoutube && channel.preview_url) {
+        const video = document.createElement("video");
+        video.src = channel.preview_url;
+        video.autoplay = true; video.muted = true; video.loop = true; video.playsInline = true;
+        entry.videoWrapEl.appendChild(video);
+      }
+
+      updateChannelCount();
+    }
+
+    function removeChannelCard(channelId) {
+      const c = channels.get(channelId);
+      if (!c) return;
+      c.ytPlayer?.destroy?.();
+      c.el.remove();
+      channels.delete(channelId);
+      if (channels.size === 0) {
+        $("channels").innerHTML = `<div class="empty-state">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6"
+            stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 12px;">
+            <rect x="2" y="5" width="14" height="14" rx="2.5" />
+            <path d="m22 8-6 4 6 4V8Z" />
+          </svg>
+          <h3>No active channels</h3>
+          <p>Add a YouTube live stream/video link above, or upload a video to begin recognition.</p>
+        </div>`;
+      }
+      updateChannelCount();
+    }
+
+    function setChannelStatus(channelId, status, detail) {
+      const c = channels.get(channelId);
+      if (!c) return;
+      c.statusEl.textContent = detail ? `${status}: ${detail}` : status;
+      c.statusEl.className = `pill ${status}`;
+      c.el.classList.toggle("active-stream", status === "live");
+      if (status !== "live" && c.overlayEl) {
+        c.overlayEl.getContext("2d").clearRect(0, 0, c.overlayEl.width, c.overlayEl.height);
+      }
+    }
+
+    function requestStopChannel(channelId) {
+      ws?.readyState === 1 && ws.send(JSON.stringify({ type: "channel_stop", channel_id: channelId }));
+    }
+
+    async function connect() {
+      await refreshHealth();
+      setInterval(refreshHealth, 15000);
+
+      ws = new WebSocket(`ws://${location.host}/ws`);
+      ws.onmessage = ev => {
+        const m = JSON.parse(ev.data);
+
+        if (m.type === "channels_snapshot") { m.channels.forEach(addChannelCard); return; }
+        if (m.type === "channel_added") { addChannelCard(m.channel); return; }
+        if (m.type === "channel_removed") { removeChannelCard(m.channel_id); return; }
+        if (m.type === "error" && !m.channel_id) { console.error(m.detail); return; }
+
+        const c = channels.get(m.channel_id);
+        if (!c) return;
+
+        if (m.type === "error") { setChannelStatus(m.channel_id, "error", m.detail); return; }
+
+        if (m.type === "stream_status") {
+          if (m.state === "started") {
+            setChannelStatus(m.channel_id, "live");
+            if (m.video_id) createPlayerForChannel(m.channel_id, m.video_id);
+          } else if (m.state === "error") {
+            setChannelStatus(m.channel_id, "error", m.detail);
+          } else if (m.state === "ended" || m.state === "stopped") {
+            setChannelStatus(m.channel_id, "stopped");
+          }
+          return;
+        }
+
+        if (m.type === "faces_seen") {
+          setChannelStatus(m.channel_id, "live");
+          c.facesEl.innerHTML = (m.faces || []).map(f => {
+            const known = f.name !== "Unknown";
+            return `<span class="face-chip ${known ? 'known' : 'unknown'}">${known ? prettyName(f.name) : "Unknown"}</span>`;
+          }).join("");
+          drawFaceBoxesOnCanvas(c.overlayEl, m.faces, m.frame_w, m.frame_h);
+        }
+      };
+    }
+
+    $("addChannelBtn").onclick = () => {
+      const url = $("chUrl").value.trim();
+      if (!url) return;
+      const name = $("chName").value.trim() || "Channel";
+      ws.send(JSON.stringify({ type: "channel_start", name, url }));
+      $("chName").value = ""; $("chUrl").value = "";
+    };
+    $("chUrl").addEventListener("keydown", e => { if (e.key === "Enter") $("addChannelBtn").click(); });
+
+    $("uploadFile").addEventListener("change", () => {
+      $("uploadBtn").disabled = !$("uploadFile").files.length;
+    });
+
+    $("uploadBtn").onclick = async () => {
+      const file = $("uploadFile").files[0];
+      if (!file) return;
+      $("uploadBtn").disabled = true;
+      $("uploadStatus").textContent = `Uploading ${file.name} …`;
+      const form = new FormData();
+      form.append("file", file);
+      form.append("name", $("uploadName").value.trim() || "Uploaded video");
+      try {
+        const res = await fetch("/upload_video", { method: "POST", body: form });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `upload failed (${res.status})`);
+        }
+        $("uploadStatus").textContent = "";
+        $("uploadFile").value = ""; $("uploadName").value = "";
+      } catch (e) {
+        $("uploadStatus").textContent = e.message;
+      } finally {
+        $("uploadBtn").disabled = !$("uploadFile").files.length;
+      }
+    };
+
+    $("personName").addEventListener("input", () => {
+      $("personBtn").disabled = !($("personName").value.trim() && $("personFiles").files.length);
+    });
+    $("personFiles").addEventListener("change", () => {
+      $("personBtn").disabled = !($("personName").value.trim() && $("personFiles").files.length);
+    });
+
+    $("personBtn").onclick = async () => {
+      const name = $("personName").value.trim();
+      const files = $("personFiles").files;
+      if (!name || !files.length) return;
+      $("personBtn").disabled = true;
+      $("personStatus").textContent = `Enrolling ${files.length} photo${files.length === 1 ? '' : 's'} for ${name} …`;
+      const form = new FormData();
+      form.append("name", name);
+      for (const f of files) form.append("files", f);
+      try {
+        const res = await fetch("/gallery/enroll", { method: "POST", body: form });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `enroll failed (${res.status})`);
+        $("personStatus").textContent =
+          `Enrolled ${data.images_enrolled}/${data.images_uploaded} photo(s) as "${prettyName(data.name)}" ` +
+          `(${data.total_enrolled_photos} total photo${data.total_enrolled_photos === 1 ? '' : 's'} now).`;
+        $("personName").value = ""; $("personFiles").value = "";
+        refreshHealth();
+      } catch (e) {
+        $("personStatus").textContent = e.message;
+      } finally {
+        $("personBtn").disabled = !($("personName").value.trim() && $("personFiles").files.length);
+      }
+    };
+
+    $("recognizeFile").addEventListener("change", () => {
+      $("recognizeBtn").disabled = !$("recognizeFile").files.length;
+    });
+
+    $("recognizeBtn").onclick = async () => {
+      const file = $("recognizeFile").files[0];
+      if (!file) return;
+      $("recognizeBtn").disabled = true;
+      $("recognizeStatus").textContent = `Analyzing ${file.name} …`;
+      $("recognizeResult").style.display = "none";
+      const form = new FormData();
+      form.append("file", file);
+      try {
+        const res = await fetch("/recognize_image", { method: "POST", body: form });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `recognition failed (${res.status})`);
+
+        const img = $("recognizeImg");
+        const objectUrl = URL.createObjectURL(file);
+        img.onload = () => {
+          drawFaceBoxesOnCanvas($("recognizeCanvas"), data.faces, data.frame_w, data.frame_h);
+          URL.revokeObjectURL(objectUrl);
+        };
+        img.src = objectUrl;
+
+        $("recognizeFacesList").innerHTML = (data.faces || []).length
+          ? data.faces.map(f => {
+              const known = f.name !== "Unknown";
+              const label = known ? `${prettyName(f.name)} (${Math.round(f.confidence * 100)}%)` : "Unknown";
+              return `<span class="face-chip ${known ? 'known' : 'unknown'}">${label}</span>`;
+            }).join("")
+          : `<span class="face-chip">No faces detected</span>`;
+        $("recognizeResult").style.display = "block";
+        $("recognizeStatus").textContent = "";
+      } catch (e) {
+        $("recognizeStatus").textContent = e.message;
+      } finally {
+        $("recognizeBtn").disabled = !$("recognizeFile").files.length;
+      }
+    };
+
+    connect();
+  </script>
+</body>
+
+</html>

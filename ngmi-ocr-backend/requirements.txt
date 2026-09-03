@@ -1,0 +1,21 @@
+fastapi==0.141.1
+uvicorn==0.52.0
+python-multipart==0.0.32
+websockets==17.1
+yt-dlp==2026.7.4
+opencv-python-headless==5.0.0.93
+numpy==2.4.6
+Pillow==12.3.0
+
+# OCR model stack (Qwen2-VL-2B base + Urdu-Nastaliq LoRA adapter -- see
+# scripts/ocr_backend.py). torch defaults to a CPU build here; for a real
+# GPU with enough VRAM (this project's dev GPU, an old 4GB card, could not
+# use it -- see the OCR_DEVICE note in webapp/server.py's docstring),
+# install a CUDA build instead, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+torch==2.5.1
+transformers==5.16.1
+peft==0.20.0
+accelerate==1.14.0
+safetensors==0.8.0
+huggingface_hub==1.29.0

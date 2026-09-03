@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NGMI Urdu OCR - Multi-Channel Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Nastaliq+Urdu:wght@400;600&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0d;
+      --bg-panel: #131317;
+      --bg-panel-2: #18181d;
+      --bg-input: #0e0e12;
+      --border: #26262d;
+      --border-hover: #34343d;
+      --text: #f2f2f4;
+      --text-secondary: #9c9ca6;
+      --text-tertiary: #68686f;
+      --accent: #4f8cff;
+      --accent-soft: rgba(79, 140, 255, .12);
+      --accent-border: rgba(79, 140, 255, .38);
+      --ok: #22c55e;
+      --ok-soft: rgba(34, 197, 94, .12);
+      --warn: #f59e0b;
+      --warn-soft: rgba(245, 158, 11, .12);
+      --err: #f87171;
+      --err-soft: rgba(248, 113, 113, .12);
+      --radius-sm: 6px;
+      --radius: 10px;
+      --radius-lg: 14px;
+      --sans: "Inter", system-ui, -apple-system, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+      --urdu: "Noto Nastaliq Urdu", "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    svg {
+      display: block;
+      flex-shrink: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-family: var(--sans);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 20px 48px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrap {
+      width: 100%;
+      max-width: 1320px;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 24px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      background: var(--accent);
+      color: #05070f;
+      border-radius: 9px;
+    }
+
+    h1 {
+      font-size: 19px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+    }
+
+    h1 small {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 400;
+      color: var(--text-tertiary);
+      margin-top: 1px;
+    }
+
+    .system-stats {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .stat-chip {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 5px 11px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-family: var(--mono);
+      white-space: nowrap;
+    }
+
+    .stat-chip::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--text-tertiary);
+      flex-shrink: 0;
+    }
+
+    .stat-chip.ok::before {
+      background: var(--ok);
+    }
+
+    .stat-chip.err::before {
+      background: var(--err);
+    }
+
+    .notice {
+      background: var(--warn-soft);
+      border: 1px solid rgba(245, 158, 11, .3);
+      color: #f5c265;
+      border-radius: var(--radius);
+      padding: 11px 16px;
+      font-size: 12.5px;
+      margin-bottom: 20px;
+      line-height: 1.55;
+    }
+
+    .control-panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      margin-bottom: 22px;
+      overflow: hidden;
+    }
+
+    .tabs {
+      display: flex;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-panel-2);
+    }
+
+    .tab {
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: 13px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-tertiary);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+
+    .tab svg {
+      opacity: .75;
+    }
+
+    .tab:hover:not(.active) {
+      color: var(--text-secondary);
+      background: #1e1e25;
+    }
+
+    .tab.active {
+      color: var(--text);
+      background: var(--bg-panel);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab.active svg {
+      opacity: 1;
+      color: var(--accent);
+    }
+
+    .tab-panel {
+      display: none;
+      padding: 18px 20px 20px;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .tab-desc {
+      font-size: 12.5px;
+      color: var(--text-tertiary);
+      margin-bottom: 12px;
+    }
+
+    .tab-status {
+      color: var(--text-tertiary);
+      font-size: 12.5px;
+    }
+
+    .bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    button,
+    input {
+      background: var(--bg-panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 9px 14px;
+      font-size: 13.5px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+    }
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      min-width: 180px;
+      background: var(--bg-input);
+      cursor: text;
+    }
+
+    input[type="text"]::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    button:hover:not(:disabled) {
+      border-color: var(--border-hover);
+      background: #1e1e25;
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #05070f;
+      font-weight: 600;
+    }
+
+    button.primary:hover:not(:disabled) {
+      background: #6d9fff;
+      border-color: #6d9fff;
+    }
+
+    button:disabled {
+      opacity: .4;
+      cursor: default;
+    }
+
+    .channels-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+      gap: 18px;
+      margin-top: 6px;
+    }
+
+    .empty-state {
+      color: var(--text-secondary);
+      text-align: center;
+      padding: 56px 20px;
+      grid-column: 1 / -1;
+      background: var(--bg-panel);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-lg);
+    }
+
+    .empty-state h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .empty-state p {
+      font-size: 13px;
+    }
+
+    .card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      transition: border-color .2s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-hover);
+    }
+
+    .card.active-stream {
+      border-color: var(--accent-border);
+    }
+
+    .card.active-stream:hover {
+      border-color: var(--accent-border);
+    }
+
+    .card .videoWrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 12px;
+      flex: 0 0 auto;
+      border: 1px solid var(--border);
+    }
+
+    .card .videoWrap .ytTarget,
+    .card .videoWrap iframe,
+    .card .videoWrap video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    .regionBox {
+      position: absolute;
+      z-index: 2;
+      border: 1.5px dashed rgba(79, 140, 255, .75);
+      background: rgba(79, 140, 255, .08);
+      pointer-events: none;
+    }
+
+    .regionBox::after {
+      content: attr(data-label);
+      position: absolute;
+      top: -1px;
+      left: -1px;
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: .3px;
+      text-transform: uppercase;
+      color: #05070f;
+      background: rgba(79, 140, 255, .85);
+      padding: 1px 5px;
+      border-radius: 0 0 4px 0;
+    }
+
+    .card .videoTop {
+      position: absolute;
+      inset: 0 0 auto 0;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 10px 24px;
+      background: linear-gradient(to bottom, rgba(5, 5, 8, .78) 0%, rgba(5, 5, 8, .4) 55%, transparent 100%);
+    }
+
+    .card .videoTop .src {
+      color: rgba(255, 255, 255, .75);
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .card .videoTop .name {
+      font-weight: 600;
+      font-size: 13.5px;
+      color: #fff;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+    }
+
+    .card .videoTop .stopBtn {
+      padding: 5px;
+      background: rgba(255, 255, 255, .08);
+      border-color: rgba(255, 255, 255, .16);
+      color: rgba(255, 255, 255, .8);
+      flex-shrink: 0;
+    }
+
+    .card .videoTop .stopBtn:hover:not(:disabled) {
+      color: #fff;
+      background: var(--err);
+      border-color: var(--err);
+    }
+
+    .pill {
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      white-space: nowrap;
+      border: 1px solid;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .pill.live {
+      color: var(--ok);
+      border-color: rgba(34, 197, 94, .35);
+      background: var(--ok-soft);
+    }
+
+    .pill.live::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      background: var(--ok);
+      border-radius: 50%;
+      animation: pulse 1.6s infinite;
+    }
+
+    .pill.starting {
+      color: var(--warn);
+      border-color: rgba(245, 158, 11, .35);
+      background: var(--warn-soft);
+    }
+
+    .pill.error {
+      color: var(--err);
+      border-color: rgba(248, 113, 113, .35);
+      background: var(--err-soft);
+    }
+
+    .pill.stopped {
+      color: var(--text-tertiary);
+      border-color: var(--border);
+      background: var(--bg-panel-2);
+    }
+
+    .videoTop .pill {
+      background: rgba(8, 8, 11, .65);
+      backdrop-filter: blur(3px);
+      flex-shrink: 0;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: .35;
+        transform: scale(1.25);
+      }
+    }
+
+    .tickerPanel {
+      background: var(--bg-panel-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+
+    .tickerPanel .tpHead {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .tickerPanel .tpLabel {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--accent);
+      flex: 1;
+    }
+
+    .tickerPanel .tpTime {
+      font-size: 10.5px;
+      color: var(--text-tertiary);
+      font-family: var(--mono);
+    }
+
+    .tickerPanel .tpText {
+      font-family: var(--urdu);
+      direction: rtl;
+      text-align: right;
+      font-size: 19px;
+      line-height: 1.9;
+      color: var(--text);
+      min-height: 1.9em;
+      word-break: break-word;
+    }
+
+    .tickerPanel .tpText.empty {
+      font-family: var(--sans);
+      direction: ltr;
+      text-align: left;
+      font-size: 12.5px;
+      color: var(--text-tertiary);
+      font-style: italic;
+    }
+
+    .tickerPanel.reading .tpLabel::after {
+      content: "reading\2026";
+      margin-left: 6px;
+      color: var(--text-tertiary);
+      text-transform: none;
+      font-weight: 400;
+      letter-spacing: 0;
+    }
+
+    .card .footer-info {
+      font-size: 10.5px;
+      color: var(--text-tertiary);
+      margin-top: auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo-title">
+        <div class="logo-badge">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 7V4h16v3M9 20h6M12 4v16" />
+          </svg>
+        </div>
+        <h1>Urdu OCR<small>Live news-ticker &amp; sticker text extraction</small></h1>
+      </div>
+      <div class="system-stats">
+        <span id="statBackend" class="stat-chip">Loading model…</span>
+        <span id="statInterval" class="stat-chip"></span>
+        <span id="statChannels" class="stat-chip">0 channels</span>
+      </div>
+    </header>
+
+    <div class="notice">
+      Each reading takes real time (seconds on a GPU, tens of seconds per crop on CPU) and every
+      channel shares one OCR worker, so this is a periodic ticker digest, not a real-time feed —
+      readings update every few tens of seconds per channel, more slowly with several channels running
+      at once.
+    </div>
+
+    <!-- Actions -->
+    <div class="control-panel">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="channel" role="tab">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9M19.1 4.9c3.9 3.9 3.9 10.2 0 14.1M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" />
+            <circle cx="12" cy="12" r="2.2" />
+          </svg>
+          <span>Live Channel</span>
+        </button>
+        <button class="tab" data-tab="upload" role="tab">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+          </svg>
+          <span>Upload Video</span>
+        </button>
+      </div>
+
+      <div class="tab-panel active" data-panel="channel">
+        <div class="tab-desc">Add a live news channel or paste any YouTube video link — its ticker
+          and sticker text will be read periodically.</div>
+        <div class="bar">
+          <input id="chName" type="text" placeholder="Channel name" style="flex: 0 1 220px">
+          <input id="chUrl" type="text" placeholder="Paste a YouTube live / video URL">
+          <button id="addChannelBtn" class="primary">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span>Add Channel</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="upload">
+        <div class="tab-desc">Upload a local video file to run OCR over it, the same way as a live
+          channel.</div>
+        <div class="bar">
+          <input id="uploadName" type="text" placeholder="Label" style="flex: 0 1 220px">
+          <input id="uploadFile" type="file" accept="video/*" style="flex: 1 1 220px;">
+          <button id="uploadBtn" class="primary" disabled>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+            </svg>
+            <span>Upload &amp; Read</span>
+          </button>
+        </div>
+        <span id="uploadStatus" class="tab-status"></span>
+      </div>
+    </div>
+
+    <!-- Channels grid -->
+    <div id="channels" class="channels-grid">
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6"
+          stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 12px;">
+          <rect x="2" y="5" width="14" height="14" rx="2.5" />
+          <path d="m22 8-6 4 6 4V8Z" />
+        </svg>
+        <h3>No active channels</h3>
+        <p>Add a YouTube live stream/video link above, or upload a video to begin reading ticker text.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    let ws;
+    const channels = new Map();
+    let regionBoxes = null; // fetched from /health: { bottom: {x0,y0,x1,y1}, side: {...} }
+    let enabledRegions = ["bottom", "side"];
+
+    const ICONS = {
+      close: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+      broadcast: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9M19.1 4.9c3.9 3.9 3.9 10.2 0 14.1M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><circle cx="12" cy="12" r="2.2"/></svg>',
+      upload: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>',
+    };
+
+    document.querySelectorAll(".tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b === btn));
+        const target = btn.dataset.tab;
+        document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.dataset.panel === target));
+      });
+    });
+
+    let ytApiReady = false;
+    let ytApiWaiters = [];
+    function loadYouTubeApi() {
+      if (window.YT && window.YT.Player) { ytApiReady = true; return; }
+      if (document.getElementById("ytApiScript")) return;
+      const tag = document.createElement("script");
+      tag.id = "ytApiScript";
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+      window.onYouTubeIframeAPIReady = () => {
+        ytApiReady = true;
+        ytApiWaiters.forEach(cb => cb());
+        ytApiWaiters = [];
+      };
+    }
+    function onYtReady(cb) { ytApiReady ? cb() : ytApiWaiters.push(cb); }
+
+    function createPlayerForChannel(channelId, videoId) {
+      const c = channels.get(channelId);
+      if (!c || c.ytPlayer || !videoId || !c.ytTargetEl) return;
+      loadYouTubeApi();
+      onYtReady(() => {
+        if (!channels.has(channelId)) return;
+        // Target the inner .ytTarget div, not .videoWrap itself -- the YT
+        // IFrame API replaces whatever element it's given with its <iframe>,
+        // and .videoWrap needs to survive (region-box overlays are its
+        // other children).
+        c.ytPlayer = new YT.Player(c.ytTargetEl, {
+          videoId,
+          playerVars: { autoplay: 1, mute: 1, playsinline: 1, modestbranding: 1 },
+        });
+      });
+    }
+
+    function timeAgo(epochSeconds) {
+      const s = Math.max(0, Math.round(Date.now() / 1000 - epochSeconds));
+      if (s < 5) return "just now";
+      if (s < 60) return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60) return `${m}m ago`;
+      return `${Math.floor(m / 60)}h ago`;
+    }
+
+    async function refreshHealth() {
+      try {
+        const h = await (await fetch("/health")).json();
+        $("statBackend").textContent = h.status === "ok" ? `OCR ready (${h.device})` : "Loading OCR model…";
+        $("statBackend").classList.toggle("ok", h.status === "ok");
+        $("statInterval").textContent = `every ${Math.round(h.sample_interval_s)}s`;
+        regionBoxes = h.region_boxes || null;
+        enabledRegions = h.regions || ["bottom", "side"];
+        // Draw region-box overlays + tick timestamps on every visible card.
+        channels.forEach((entry, id) => {
+          drawRegionBoxes(entry);
+          for (const region of enabledRegions) {
+            const t = entry.lastReadAt[region];
+            if (t) entry.timeEls[region].textContent = timeAgo(t);
+          }
+        });
+      } catch { }
+    }
+
+    function clearEmptyState() {
+      const e = document.querySelector("#channels .empty-state");
+      if (e) e.remove();
+    }
+
+    function updateChannelCount() {
+      $("statChannels").textContent = `${channels.size} channel${channels.size === 1 ? '' : 's'}`;
+    }
+
+    function drawRegionBoxes(entry) {
+      if (!regionBoxes) return;
+      entry.regionBoxEls.forEach(el => el.remove());
+      entry.regionBoxEls = [];
+      for (const region of enabledRegions) {
+        const box = regionBoxes[region];
+        if (!box) continue;
+        const el = document.createElement("div");
+        el.className = "regionBox";
+        el.dataset.label = region;
+        el.style.left = `${box.x0 * 100}%`;
+        el.style.top = `${box.y0 * 100}%`;
+        el.style.width = `${(box.x1 - box.x0) * 100}%`;
+        el.style.height = `${(box.y1 - box.y0) * 100}%`;
+        entry.videoWrapEl.appendChild(el);
+        entry.regionBoxEls.push(el);
+      }
+    }
+
+    function tickerPanelMarkup(region) {
+      const label = region === "bottom" ? "Bottom ticker" : "Side sticker";
+      return `
+    <div class="tickerPanel" data-region="${region}">
+      <div class="tpHead">
+        <span class="tpLabel">${label}</span>
+        <span class="tpTime"></span>
+      </div>
+      <div class="tpText empty">Waiting for first reading…</div>
+    </div>`;
+    }
+
+    function addChannelCard(channel) {
+      if (channels.has(channel.id)) return;
+      clearEmptyState();
+      const el = document.createElement("div");
+      el.className = "card";
+      const isYoutube = channel.source_type === "youtube";
+      const srcIcon = isYoutube ? ICONS.broadcast : ICONS.upload;
+
+      el.innerHTML = `
+    <div class="videoWrap">
+      <div class="ytTarget"></div>
+      <div class="videoTop">
+        <span class="src">${srcIcon}</span>
+        <span class="name" title="${channel.name}">${channel.name}</span>
+        <span class="pill ${channel.status || "starting"}">${channel.status === "starting" ? "Connecting…" : (channel.status || "starting")}</span>
+        <button class="stopBtn" title="Close channel">${ICONS.close}</button>
+      </div>
+    </div>
+    ${enabledRegions.map(tickerPanelMarkup).join("")}
+    ${channel.url ? `<div class="footer-info" title="${channel.url}">${channel.url}</div>` : ""}
+  `;
+
+      el.querySelector(".stopBtn").onclick = () => requestStopChannel(channel.id);
+      $("channels").appendChild(el);
+
+      const textEls = {}, timeEls = {}, panelEls = {};
+      enabledRegions.forEach(region => {
+        const panel = el.querySelector(`.tickerPanel[data-region="${region}"]`);
+        panelEls[region] = panel;
+        textEls[region] = panel.querySelector(".tpText");
+        timeEls[region] = panel.querySelector(".tpTime");
+      });
+
+      const entry = {
+        el,
+        statusEl: el.querySelector(".pill"),
+        videoWrapEl: el.querySelector(".videoWrap"),
+        ytTargetEl: el.querySelector(".ytTarget"),
+        regionBoxEls: [],
+        panelEls, textEls, timeEls,
+        lastReadAt: {},
+        ytPlayer: null, url: channel.url,
+      };
+      channels.set(channel.id, entry);
+      drawRegionBoxes(entry);
+
+      if (isYoutube && channel.video_id) {
+        createPlayerForChannel(channel.id, channel.video_id);
+      } else if (!isYoutube && channel.preview_url) {
+        const video = document.createElement("video");
+        video.src = channel.preview_url;
+        video.autoplay = true; video.muted = true; video.loop = true; video.playsInline = true;
+        entry.videoWrapEl.insertBefore(video, entry.videoWrapEl.firstChild);
+      }
+
+      updateChannelCount();
+    }
+
+    function removeChannelCard(channelId) {
+      const c = channels.get(channelId);
+      if (!c) return;
+      c.ytPlayer?.destroy?.();
+      c.el.remove();
+      channels.delete(channelId);
+      if (channels.size === 0) {
+        $("channels").innerHTML = `<div class="empty-state">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6"
+            stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 12px;">
+            <rect x="2" y="5" width="14" height="14" rx="2.5" />
+            <path d="m22 8-6 4 6 4V8Z" />
+          </svg>
+          <h3>No active channels</h3>
+          <p>Add a YouTube live stream/video link above, or upload a video to begin reading ticker text.</p>
+        </div>`;
+      }
+      updateChannelCount();
+    }
+
+    function setChannelStatus(channelId, status, detail) {
+      const c = channels.get(channelId);
+      if (!c) return;
+      c.statusEl.textContent = detail ? `${status}: ${detail}` : status;
+      c.statusEl.className = `pill ${status}`;
+      c.el.classList.toggle("active-stream", status === "live");
+    }
+
+    function requestStopChannel(channelId) {
+      ws?.readyState === 1 && ws.send(JSON.stringify({ type: "channel_stop", channel_id: channelId }));
+    }
+
+    async function connect() {
+      await refreshHealth();
+      setInterval(refreshHealth, 10000);
+
+      ws = new WebSocket(`ws://${location.host}/ws`);
+      ws.onmessage = ev => {
+        const m = JSON.parse(ev.data);
+
+        if (m.type === "channels_snapshot") { m.channels.forEach(addChannelCard); return; }
+        if (m.type === "channel_added") { addChannelCard(m.channel); return; }
+        if (m.type === "channel_removed") { removeChannelCard(m.channel_id); return; }
+        if (m.type === "error" && !m.channel_id) { console.error(m.detail); return; }
+
+        const c = channels.get(m.channel_id);
+        if (!c) return;
+
+        if (m.type === "error") { setChannelStatus(m.channel_id, "error", m.detail); return; }
+
+        if (m.type === "stream_status") {
+          if (m.state === "started") {
+            setChannelStatus(m.channel_id, "live");
+            if (m.video_id) createPlayerForChannel(m.channel_id, m.video_id);
+          } else if (m.state === "error") {
+            setChannelStatus(m.channel_id, "error", m.detail);
+          } else if (m.state === "ended" || m.state === "stopped") {
+            setChannelStatus(m.channel_id, "stopped");
+          }
+          return;
+        }
+
+        if (m.type === "ocr_reading") {
+          setChannelStatus(m.channel_id, "live");
+          c.panelEls[m.region]?.classList.add("reading");
+          return;
+        }
+
+        if (m.type === "ocr_text") {
+          setChannelStatus(m.channel_id, "live");
+          const textEl = c.textEls[m.region];
+          const timeEl = c.timeEls[m.region];
+          const panelEl = c.panelEls[m.region];
+          if (!textEl) return;
+          panelEl.classList.remove("reading");
+          c.lastReadAt[m.region] = m.read_at;
+          if (m.text) {
+            textEl.textContent = m.text;
+            textEl.classList.remove("empty");
+          } else {
+            textEl.textContent = "No text detected in this reading.";
+            textEl.classList.add("empty");
+          }
+          timeEl.textContent = timeAgo(m.read_at);
+        }
+      };
+    }
+
+    $("addChannelBtn").onclick = () => {
+      const url = $("chUrl").value.trim();
+      if (!url) return;
+      const name = $("chName").value.trim() || "Channel";
+      ws.send(JSON.stringify({ type: "channel_start", name, url }));
+      $("chName").value = ""; $("chUrl").value = "";
+    };
+    $("chUrl").addEventListener("keydown", e => { if (e.key === "Enter") $("addChannelBtn").click(); });
+
+    $("uploadFile").addEventListener("change", () => {
+      $("uploadBtn").disabled = !$("uploadFile").files.length;
+    });
+
+    $("uploadBtn").onclick = async () => {
+      const file = $("uploadFile").files[0];
+      if (!file) return;
+      $("uploadBtn").disabled = true;
+      $("uploadStatus").textContent = `Uploading ${file.name} …`;
+      const form = new FormData();
+      form.append("file", file);
+      form.append("name", $("uploadName").value.trim() || "Uploaded video");
+      try {
+        const res = await fetch("/upload_video", { method: "POST", body: form });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `upload failed (${res.status})`);
+        }
+        $("uploadStatus").textContent = "";
+        $("uploadFile").value = ""; $("uploadName").value = "";
+      } catch (e) {
+        $("uploadStatus").textContent = e.message;
+      } finally {
+        $("uploadBtn").disabled = !$("uploadFile").files.length;
+      }
+    };
+
+    connect();
+  </script>
+</body>
+
+</html>

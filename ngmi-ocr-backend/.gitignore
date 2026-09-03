@@ -1,0 +1,6 @@
+.venv/
+tools/
+webapp/uploads/
+__pycache__/
+*.pyc
+*.log

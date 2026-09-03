@@ -1,0 +1,10 @@
+.venv/
+tools/
+faces/gallery/
+faces/gallery_index.npz
+faces/unknown_faces/
+models/
+webapp/uploads/
+__pycache__/
+*.pyc
+*.log
