@@ -63,25 +63,33 @@ Each service folder is self-contained:
 
 ## Setup — all three services
 
-There's no shared install step; set up whichever service(s) you need the
-same way, independently:
+Each service has its **own separate `.venv`** — there's no shared install
+step, and no venv is shared between services. Every command block below is
+independent and self-contained, run from the repo root; `.venv\Scripts\...`
+always refers to that one service's own virtual env, never another's.
 
 ```powershell
-# STT backend (Windows PowerShell)
+# --- STT backend (Windows PowerShell) ---
 cd ngmi-stt-backend
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 .venv\Scripts\python scripts\download_models.py small-int8
 .venv\Scripts\python webapp\server.py            # -> http://127.0.0.1:8000
+cd ..
+```
 
-# OCR backend
+```powershell
+# --- OCR backend ---
 cd ngmi-ocr-backend
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 .venv\Scripts\python webapp\server.py            # -> http://127.0.0.1:8020
 # first run downloads the base model + LoRA adapter (~4.5GB) from Hugging Face
+cd ..
+```
 
-# Face recognition backend
+```powershell
+# --- Face recognition backend ---
 cd ngmi-face-recognation-backend
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
@@ -89,12 +97,40 @@ python -m venv .venv
 # populate faces/gallery/<person-name>/*.jpg, then:
 .venv\Scripts\python scripts\enroll_faces.py --calibrate
 .venv\Scripts\python webapp\server.py            # -> http://127.0.0.1:8010
+cd ..
 ```
 
-All three can run at once — they're on different ports and share nothing
-at runtime. Each has a `GET /health` endpoint that reports readiness
-(model/device loaded, gallery size, DB connection, etc.) — useful for
-confirming a service actually came up before opening its dashboard.
+All three can run at once — start each in its own terminal (each block
+above ends back at the repo root, so it's safe to run them one after
+another in the same terminal too, just not concurrently in one). They're
+on different ports and share nothing at runtime. Each has a `GET /health`
+endpoint that reports readiness (model/device loaded, gallery size, DB
+connection, etc.) — useful for confirming a service actually came up
+before opening its dashboard.
+
+### Already set up? Just run this
+
+Once each service's `.venv` exists, dependencies are installed, and any
+one-time model download/enrollment is done, day-to-day startup is just —
+**one terminal per service**, each started from the repo root:
+
+```powershell
+# terminal 1 — STT, http://127.0.0.1:8000
+cd ngmi-stt-backend; .venv\Scripts\python webapp\server.py
+```
+
+```powershell
+# terminal 2 — OCR, http://127.0.0.1:8020
+cd ngmi-ocr-backend; .venv\Scripts\python webapp\server.py
+```
+
+```powershell
+# terminal 3 — Face recognition, http://127.0.0.1:8010
+cd ngmi-face-recognation-backend; .venv\Scripts\python webapp\server.py
+```
+
+That's the whole day-to-day workflow; everything above the "Already set
+up?" heading is one-time setup.
 
 See each service's own `README.md` for: full CLI tooling (STT's
 transcribe/WER-eval pipeline), model/hardware notes, every environment
